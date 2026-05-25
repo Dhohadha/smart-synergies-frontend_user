@@ -1,0 +1,92 @@
+{
+  "project_info": {
+    "project_number": "494381381149",
+    "project_id": "smart-synergies-4ba0c",
+    "storage_bucket": "smart-synergies-4ba0c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:494381381149:android:4fdad171391c66f2e0f8f4",
+        "android_client_info": {
+          "package_name": "com.smart_synergies_admin.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "494381381149-mh0stk039rqvjj1dnpbv3e8uv5nithvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFjuVAjPtlSWsX523eWoJdKJMx1oUIdFc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "494381381149-mh0stk039rqvjj1dnpbv3e8uv5nithvr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "494381381149-1ls3ltf7g1n2kde0id7enugkdu8q7lu2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.smartsynergiesuser.app",
+                "app_store_id": "7410963"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:494381381149:android:b1538e959b5f12ede0f8f4",
+        "android_client_info": {
+          "package_name": "com.smart_synergies_user.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "494381381149-uhcdppa1bqrh5bno88qokfck46atqo35.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.smart_synergies_user.app",
+            "certificate_hash": "fea700d34c6aa24ac32a59605481ce15f1339ad4"
+          }
+        },
+        {
+          "client_id": "494381381149-mh0stk039rqvjj1dnpbv3e8uv5nithvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFjuVAjPtlSWsX523eWoJdKJMx1oUIdFc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "494381381149-mh0stk039rqvjj1dnpbv3e8uv5nithvr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "494381381149-1ls3ltf7g1n2kde0id7enugkdu8q7lu2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.smartsynergiesuser.app",
+                "app_store_id": "7410963"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
