@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
   static const String _ipKey = 'server_ip_address';
-  static const String _defaultIP = '10.177.156.35';
+  static const String _defaultIP = '13.233.76.8';
 
   static String _serverIP = _defaultIP;
 
