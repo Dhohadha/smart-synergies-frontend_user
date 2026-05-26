@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
+import 'confirmation_dialog.dart';
 
 class NoAccessScreen extends ConsumerWidget {
   final String message;
@@ -28,7 +29,18 @@ class NoAccessScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 40),
             ElevatedButton.icon(
-              onPressed: () => ref.read(authProvider.notifier).signOut(),
+              onPressed: () async {
+                final confirm = await ConfirmationDialog.show(
+                  context: context,
+                  title: 'Logout',
+                  message: 'Are you sure you want to logout?',
+                  confirmLabel: 'Logout',
+                  icon: Icons.logout_rounded,
+                  isDestructive: true,
+                );
+                if (confirm != true) return;
+                ref.read(authProvider.notifier).signOut();
+              },
               icon: const Icon(Icons.logout),
               label: const Text('LOGOUT'),
               style: ElevatedButton.styleFrom(

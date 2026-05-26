@@ -5,6 +5,7 @@ import '../core/app_colors.dart';
 import 'tabs/dashboard_tab.dart';
 import 'tabs/control_tab.dart';
 import 'tabs/profile_tab.dart';
+import '../widgets/confirmation_dialog.dart';
 
 import '../../providers/user_provider.dart';
 
@@ -129,6 +130,16 @@ class _MainScreenState extends ConsumerState<MainScreen> with TickerProviderStat
                   onPressed: isProcessing
                       ? null
                       : () async {
+                          final confirm = await ConfirmationDialog.show(
+                            context: context,
+                            title: 'Decline Request',
+                            message: 'Are you sure you want to decline the access request from $ownerName ($ownerEmail)?',
+                            confirmLabel: 'Decline',
+                            icon: Icons.close_rounded,
+                            isDestructive: true,
+                          );
+                          if (confirm != true) return;
+
                           setDialogState(() => isProcessing = true);
                           try {
                             final success = await ref
@@ -153,6 +164,16 @@ class _MainScreenState extends ConsumerState<MainScreen> with TickerProviderStat
                   onPressed: isProcessing
                       ? null
                       : () async {
+                          final confirm = await ConfirmationDialog.show(
+                            context: context,
+                            title: 'Accept Request',
+                            message: 'Are you sure you want to accept the access request from $ownerName ($ownerEmail)?',
+                            confirmLabel: 'Accept',
+                            icon: Icons.check_rounded,
+                            iconColor: AppColors.green,
+                          );
+                          if (confirm != true) return;
+
                           setDialogState(() => isProcessing = true);
                           try {
                             final success = await ref
@@ -339,7 +360,9 @@ class _MainScreenState extends ConsumerState<MainScreen> with TickerProviderStat
       next.whenData((profile) {
         if (profile != null) {
           // 1. Invitations Check
-          final invitations = profile['pendingInvitations'] as List<dynamic>? ?? [];
+          final invitations = (profile['pendingInvitations'] as List<dynamic>? ?? [])
+              .where((i) => (i['status'] ?? 'pending') != 'declined')
+              .toList();
           if (invitations.isNotEmpty) {
             _showInvitationDialog(context, Map<String, dynamic>.from(invitations.first), isDark);
           }

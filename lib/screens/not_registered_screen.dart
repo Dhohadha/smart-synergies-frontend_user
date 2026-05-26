@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/confirmation_dialog.dart';
 
 class NotRegisteredScreen extends ConsumerWidget {
   const NotRegisteredScreen({super.key});
@@ -129,6 +130,15 @@ class NotRegisteredScreen extends ConsumerWidget {
                   // Logout Button
                   GestureDetector(
                     onTap: () async {
+                      final confirm = await ConfirmationDialog.show(
+                        context: context,
+                        title: 'Sign Out',
+                        message: 'Are you sure you want to sign out and try another account?',
+                        confirmLabel: 'Sign Out',
+                        icon: Icons.logout_rounded,
+                        isDestructive: true,
+                      );
+                      if (confirm != true) return;
                       try {
                         await ref.read(authProvider.notifier).signOut();
                       } catch (e) {

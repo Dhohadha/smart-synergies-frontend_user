@@ -227,6 +227,47 @@ class _ShareAccessScreenState extends ConsumerState<ShareAccessScreen> {
         );
         break;
 
+      case 'declined_can_reshare':
+        _showConfirmDialog(
+          email: email,
+          title: 'Reshare Access?',
+          icon: Icons.replay_rounded,
+          iconColor: Colors.orange,
+          isDark: isDark,
+          bodyContent: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.red.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cancel_outlined, color: AppColors.red, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        result['message'] ?? 'This user declined your previous invite.',
+                        style: GoogleFonts.outfit(fontSize: 12, color: AppColors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Resend ${_selectedDevices.length} device(s) invite to $email?',
+                style: GoogleFonts.outfit(color: AppColors.getTextMuted(isDark), fontSize: 13),
+              ),
+            ],
+          ),
+        );
+        break;
+
       case 'is_owner':
         _showBlockedDialog(
           icon: Icons.block,
@@ -770,10 +811,28 @@ class _SharedUsersListState extends State<_SharedUsersList> {
             }
             return Column(
               children: snapshot.data!.map((user) {
-                final isPending = user['status'] == 'Pending';
+                final status = user['status'] as String;
+                final isPending = status == 'Pending';
+                final isDeclined = status == 'Declined';
+                final isAccepted = status == 'Accepted';
                 final email = user['email'] as String;
                 final isRevoking = _revoking.contains(email);
                 final uDevices = List<String>.from(user['devices'] ?? []);
+
+                Color statusColor = AppColors.green;
+                if (isPending) statusColor = Colors.orange;
+                if (isDeclined) statusColor = AppColors.red;
+
+                Color avatarBg = AppColors.cyan.withValues(alpha: 0.12);
+                Color avatarIcon = AppColors.cyan;
+                if (isPending) {
+                  avatarBg = AppColors.cyan.withValues(alpha: 0.05);
+                  avatarIcon = AppColors.getTextMuted(widget.isDark);
+                }
+                if (isDeclined) {
+                  avatarBg = AppColors.red.withValues(alpha: 0.08);
+                  avatarIcon = AppColors.red;
+                }
 
                 return GlassCard(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -782,8 +841,12 @@ class _SharedUsersListState extends State<_SharedUsersList> {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: isPending ? AppColors.cyan.withValues(alpha: 0.05) : AppColors.cyan.withValues(alpha: 0.12),
-                        child: Icon(Icons.person, size: 20, color: isPending ? AppColors.getTextMuted(widget.isDark) : AppColors.cyan),
+                        backgroundColor: avatarBg,
+                        child: Icon(
+                          isDeclined ? Icons.person_off : Icons.person,
+                          size: 20,
+                          color: avatarIcon,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -797,11 +860,11 @@ class _SharedUsersListState extends State<_SharedUsersList> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${user['role']} • ${user['status']}',
+                              '${user['role']} • $status',
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: isPending ? Colors.orange : AppColors.green,
+                                color: statusColor,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -818,6 +881,53 @@ class _SharedUsersListState extends State<_SharedUsersList> {
                       ),
                       if (isRevoking)
                         const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.red))
+                      else if (isDeclined) ...[
+                        _ReshareButton(
+                          ownerEmail: widget.ownerEmail,
+                          sharedEmail: email,
+                          ownerDevices: ownerDevices,
+                          isDark: widget.isDark,
+                          onReshared: () {
+                            widget.onRevoke();
+                            setState(() {});
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.person_remove_outlined, color: AppColors.red, size: 20),
+                          tooltip: 'Remove access',
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                backgroundColor: AppColors.getBackground(widget.isDark),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                title: Text(
+                                  'Remove Access',
+                                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(widget.isDark), fontSize: 16),
+                                ),
+                                content: Text(
+                                  'Remove $email\'s access to your devices?',
+                                  style: GoogleFonts.outfit(color: AppColors.getTextSecondary(widget.isDark), fontSize: 14),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: Text('CANCEL', style: GoogleFonts.outfit(color: AppColors.getTextMuted(widget.isDark))),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: Text(
+                                      'REMOVE',
+                                      style: GoogleFonts.outfit(color: AppColors.red, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ) ?? false;
+                            if (confirmed) _revoke(ref, email);
+                          },
+                        ),
+                      ]
                       else ...[
                         IconButton(
                           icon: const Icon(Icons.edit_outlined, color: AppColors.cyan, size: 20),
@@ -872,3 +982,68 @@ class _SharedUsersListState extends State<_SharedUsersList> {
   }
 }
 
+class _ReshareButton extends ConsumerStatefulWidget {
+  final String ownerEmail;
+  final String sharedEmail;
+  final List<String> ownerDevices;
+  final bool isDark;
+  final VoidCallback onReshared;
+
+  const _ReshareButton({
+    required this.ownerEmail,
+    required this.sharedEmail,
+    required this.ownerDevices,
+    required this.isDark,
+    required this.onReshared,
+  });
+
+  @override
+  ConsumerState<_ReshareButton> createState() => _ReshareButtonState();
+}
+
+class _ReshareButtonState extends ConsumerState<_ReshareButton> {
+  bool _isLoading = false;
+
+  Future<void> _reshare() async {
+    setState(() => _isLoading = true);
+    try {
+      final success = await ref
+          .read(userProvider.notifier)
+          .shareAccess(widget.sharedEmail, widget.ownerDevices);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Invite resent to ${widget.sharedEmail}!', style: GoogleFonts.outfit()),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.cyan,
+        ));
+        widget.onReshared();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to reshare. Please try again.', style: GoogleFonts.outfit()),
+          backgroundColor: AppColors.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _isLoading
+        ? const Padding(
+            padding: EdgeInsets.all(8),
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+            ),
+          )
+        : IconButton(
+            icon: const Icon(Icons.replay_rounded, color: Colors.orange, size: 20),
+            tooltip: 'Reshare access',
+            onPressed: _reshare,
+          );
+  }
+}

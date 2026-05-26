@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,6 +9,7 @@ import '../../providers/user_provider.dart';
 import '../../providers/device_provider.dart';
 import '../alerts_history_screen.dart';
 import '../../models/device_model.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 class DashboardTab extends ConsumerStatefulWidget {
   const DashboardTab({super.key});
@@ -50,7 +51,9 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                 [];
 
             final pendingInvitations =
-                (user['pendingInvitations'] as List<dynamic>?) ?? [];
+                ((user['pendingInvitations'] as List<dynamic>?) ?? [])
+                    .where((i) => (i['status'] ?? 'pending') != 'declined')
+                    .toList();
 
             return Column(
               children: [
@@ -1312,6 +1315,16 @@ class _InvitationBannerState extends ConsumerState<_InvitationBanner> {
                     onPressed: _isProcessing
                         ? null
                         : () async {
+                            final confirm = await ConfirmationDialog.show(
+                              context: context,
+                              title: 'Decline Request',
+                              message: 'Are you sure you want to decline the access request from $ownerName ($ownerEmail)?',
+                              confirmLabel: 'Decline',
+                              icon: Icons.close_rounded,
+                              isDestructive: true,
+                            );
+                            if (confirm != true) return;
+
                             setState(() => _isProcessing = true);
                             try {
                               await ref
@@ -1341,6 +1354,16 @@ class _InvitationBannerState extends ConsumerState<_InvitationBanner> {
                     onPressed: _isProcessing
                         ? null
                         : () async {
+                            final confirm = await ConfirmationDialog.show(
+                              context: context,
+                              title: 'Accept Request',
+                              message: 'Are you sure you want to accept the access request from $ownerName ($ownerEmail)?',
+                              confirmLabel: 'Accept',
+                              icon: Icons.check_rounded,
+                              iconColor: AppColors.green,
+                            );
+                            if (confirm != true) return;
+
                             setState(() => _isProcessing = true);
                             try {
                               await ref

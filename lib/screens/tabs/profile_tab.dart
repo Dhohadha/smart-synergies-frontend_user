@@ -10,6 +10,7 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/glass_card.dart';
 import '../share_access_screen.dart';
 import '../../core/app_config.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 final logoutLoadingProvider = StateProvider<bool>((ref) => false);
 
@@ -67,8 +68,10 @@ class ProfileTab extends ConsumerWidget {
                   .fadeIn(duration: 500.ms, delay: 200.ms),
               const SizedBox(height: 12),
               
-              // Invitations Section
-              if ((user['pendingInvitations'] as List<dynamic>? ?? []).isNotEmpty) ...[
+              // Invitations Section (only show pending, not declined)
+              if ((user['pendingInvitations'] as List<dynamic>? ?? [])
+                  .where((i) => (i['status'] ?? 'pending') != 'declined')
+                  .isNotEmpty) ...[
                 _sectionLabel(Icons.mark_email_unread_rounded, 'Access Requests', isDark)
                     .animate()
                     .fadeIn(duration: 500.ms, delay: 220.ms),
@@ -76,6 +79,7 @@ class ProfileTab extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     children: (user['pendingInvitations'] as List<dynamic>)
+                        .where((i) => (i['status'] ?? 'pending') != 'declined')
                         .map((invite) => _ProfileInvitationItem(
                               invite: Map<String, dynamic>.from(invite),
                               ref: ref,
@@ -872,6 +876,16 @@ class ProfileTab extends ConsumerWidget {
         onTap: isLoggingOut 
           ? null 
           : () async {
+              final confirm = await ConfirmationDialog.show(
+                context: context,
+                title: 'Sign Out',
+                message: 'Are you sure you want to sign out?',
+                confirmLabel: 'Sign Out',
+                icon: Icons.logout_rounded,
+                isDestructive: true,
+              );
+              if (confirm != true) return;
+
               ref.read(logoutLoadingProvider.notifier).state = true;
               try {
                 await ref.read(authProvider.notifier).signOut();
@@ -1002,6 +1016,16 @@ class _ProfileInvitationItemState extends State<_ProfileInvitationItem> {
                 onPressed: _isProcessing
                     ? null
                     : () async {
+                        final confirm = await ConfirmationDialog.show(
+                          context: context,
+                          title: 'Decline Request',
+                          message: 'Are you sure you want to decline the access request from $ownerName ($ownerEmail)?',
+                          confirmLabel: 'Decline',
+                          icon: Icons.close_rounded,
+                          isDestructive: true,
+                        );
+                        if (confirm != true) return;
+
                         setState(() => _isProcessing = true);
                         try {
                           await widget.ref
@@ -1025,6 +1049,16 @@ class _ProfileInvitationItemState extends State<_ProfileInvitationItem> {
                 onPressed: _isProcessing
                     ? null
                     : () async {
+                        final confirm = await ConfirmationDialog.show(
+                          context: context,
+                          title: 'Accept Request',
+                          message: 'Are you sure you want to accept the access request from $ownerName ($ownerEmail)?',
+                          confirmLabel: 'Accept',
+                          icon: Icons.check_rounded,
+                          iconColor: AppColors.green,
+                        );
+                        if (confirm != true) return;
+
                         setState(() => _isProcessing = true);
                         try {
                           await widget.ref

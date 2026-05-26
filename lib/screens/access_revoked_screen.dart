@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +6,7 @@ import '../../core/app_colors.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glass_card.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 final revInvitesLoadingProvider = StateProvider<bool>((ref) => false);
 final revSignoutLoadingProvider = StateProvider<bool>((ref) => false);
@@ -23,6 +24,16 @@ class _AccessRevokedScreenState extends ConsumerState<AccessRevokedScreen> {
   final Set<String> _processingInvites = {};
 
   Future<void> _signOut() async {
+    final confirm = await ConfirmationDialog.show(
+      context: context,
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out?',
+      confirmLabel: 'Sign Out',
+      icon: Icons.logout_rounded,
+      isDestructive: true,
+    );
+    if (confirm != true) return;
+
     ref.read(revSignoutLoadingProvider.notifier).state = true;
     try {
       await ref.read(authProvider.notifier).signOut();
@@ -44,7 +55,9 @@ class _AccessRevokedScreenState extends ConsumerState<AccessRevokedScreen> {
           loading: () => const Center(child: CircularProgressIndicator(color: AppColors.cyan)),
           error: (err, _) => Center(child: Text('Error loading details: $err', style: GoogleFonts.outfit(color: AppColors.red))),
           data: (profile) {
-            final invitations = (profile?['pendingInvitations'] as List<dynamic>? ?? []);
+            final invitations = (profile?['pendingInvitations'] as List<dynamic>? ?? [])
+                .where((i) => (i['status'] ?? 'pending') != 'declined')
+                .toList();
 
             return SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -219,6 +232,16 @@ class _AccessRevokedScreenState extends ConsumerState<AccessRevokedScreen> {
             children: [
               TextButton(
                 onPressed: isProcessing ? null : () async {
+                  final confirm = await ConfirmationDialog.show(
+                    context: context,
+                    title: 'Decline Request',
+                    message: 'Are you sure you want to decline the access request from $ownerEmail?',
+                    confirmLabel: 'Decline',
+                    icon: Icons.close_rounded,
+                    isDestructive: true,
+                  );
+                  if (confirm != true) return;
+
                   setState(() => _processingInvites.add(ownerEmail));
                   try {
                     final success = await ref.read(userProvider.notifier).declineInvitation(ownerEmail);
@@ -240,6 +263,16 @@ class _AccessRevokedScreenState extends ConsumerState<AccessRevokedScreen> {
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: isProcessing ? null : () async {
+                  final confirm = await ConfirmationDialog.show(
+                    context: context,
+                    title: 'Accept Request',
+                    message: 'Are you sure you want to accept the access request from $ownerEmail?',
+                    confirmLabel: 'Accept',
+                    icon: Icons.check_rounded,
+                    iconColor: AppColors.green,
+                  );
+                  if (confirm != true) return;
+
                   setState(() => _processingInvites.add(ownerEmail));
                   try {
                     final success = await ref.read(userProvider.notifier).acceptInvitation(ownerEmail);
