@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
@@ -381,25 +382,41 @@ class _MainScreenState extends ConsumerState<MainScreen> with TickerProviderStat
         }
       });
     });
-    
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(isDark),
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        children: const [DashboardTab(), ControlTab(), ProfileTab()],
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final shouldPop = await ConfirmationDialog.show(
+          context: context,
+          title: 'Exit App',
+          message: 'Are you sure you want to exit Smart Synergies?',
+          confirmLabel: 'Exit',
+          icon: Icons.exit_to_app_rounded,
+          isDestructive: true,
+        );
+        if (shouldPop == true) {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.getBackground(isDark),
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          children: const [DashboardTab(), ControlTab(), ProfileTab()],
+        ),
+        bottomNavigationBar: _buildBottomNav(isDark),
       ),
-      bottomNavigationBar: _buildBottomNav(isDark),
     );
   }
 
   Widget _buildBottomNav(bool isDark) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0B1426) : Colors.white,
+        color: AppColors.getSurface(isDark),
         border: Border(
           top: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            color: AppColors.getGlassBorder(isDark),
             width: 1.0,
           ),
         ),

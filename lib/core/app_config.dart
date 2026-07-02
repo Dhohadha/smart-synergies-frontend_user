@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
   static const String _ipKey = 'server_ip_address';
-  static const String _defaultIP = '13.233.76.8';
+  static const String _defaultIP = '10.34.170.35';
 
   static String _serverIP = _defaultIP;
 
@@ -10,13 +10,13 @@ class AppConfig {
   static String get serverIP => _serverIP;
 
   /// Get user API endpoints
-  static String get userBaseUrl => 'http://$_serverIP:5000/api/users';
+  static String get userBaseUrl => 'http://$_serverIP:6565/api/users';
 
   /// Get device API endpoints
-  static String get deviceBaseUrl => 'http://$_serverIP:5000/api/devices';
+  static String get deviceBaseUrl => 'http://$_serverIP:6565/api/devices';
 
   /// Get WebSocket endpoint
-  static String get wsUrl => 'ws://$_serverIP:5000';
+  static String get wsUrl => 'ws://$_serverIP:6565';
 
   /// Initialize and load server IP from SharedPreferences
   static Future<void> init() async {

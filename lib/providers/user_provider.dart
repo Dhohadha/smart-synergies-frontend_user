@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -50,6 +51,12 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
         NotificationServices.ensureTokenSynced().catchError((e) {
           debugPrint('Error syncing FCM token in fetchUserProfile: $e');
         });
+        
+        final prefs = await SharedPreferences.getInstance();
+        final alertSoundEnabled = data['settings']?['alertSoundEnabled'] ?? true;
+        await prefs.setBool('alert_sound_enabled', alertSoundEnabled);
+        final List<String> mutedDevices = List<String>.from(data['settings']?['mutedDevices'] ?? []);
+        await prefs.setStringList('muted_devices', mutedDevices);
 
         state = AsyncValue.data(data);
       } else {
@@ -223,6 +230,12 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
           debugPrint('Error syncing FCM token in refreshProfileQuietly: $e');
         });
 
+        final prefs = await SharedPreferences.getInstance();
+        final alertSoundEnabled = data['settings']?['alertSoundEnabled'] ?? true;
+        await prefs.setBool('alert_sound_enabled', alertSoundEnabled);
+        final List<String> mutedDevices = List<String>.from(data['settings']?['mutedDevices'] ?? []);
+        await prefs.setStringList('muted_devices', mutedDevices);
+
         state = AsyncValue.data(data);
       }
     } catch (e) {
@@ -250,10 +263,47 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
           updatedData['settings']['alertSoundEnabled'] = value;
           state = AsyncValue.data(updatedData);
         }
+        
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('alert_sound_enabled', value);
+        
         return true;
       }
       return false;
     } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> updateMutedDevices(List<String> deviceIds) async {
+    try {
+      if (firebaseUser == null) return false;
+      final token = await firebaseUser!.getIdToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/settings/muted-devices'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'mutedDevices': deviceIds}),
+      );
+
+      if (response.statusCode == 200) {
+        if (state.value != null) {
+          final updatedData = Map<String, dynamic>.from(state.value!);
+          updatedData['settings'] ??= {};
+          updatedData['settings']['mutedDevices'] = deviceIds;
+          state = AsyncValue.data(updatedData);
+        }
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList('muted_devices', deviceIds);
+
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error updating muted devices: $e');
       return false;
     }
   }

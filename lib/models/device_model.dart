@@ -10,6 +10,9 @@ class DeviceModel {
   final double fixedCurrentPerAerator;
   final DateTime? lastCalibratedAt;
   final List<RelayStatus> relays;
+  final bool isActive;
+  final DateTime? lastSeen;
+  final DateTime? inactiveSince;
 
   DeviceModel({
     required this.deviceId,
@@ -23,6 +26,9 @@ class DeviceModel {
     required this.fixedCurrentPerAerator,
     this.lastCalibratedAt,
     required this.relays,
+    this.isActive = false,
+    this.lastSeen,
+    this.inactiveSince,
   });
 
   factory DeviceModel.fromJson(Map<String, dynamic> json) {
@@ -43,6 +49,9 @@ class DeviceModel {
               ?.map((r) => RelayStatus.fromJson(r))
               .toList() ??
           [],
+      isActive: json['isActive'] ?? false,
+      lastSeen: json['lastSeen'] != null ? DateTime.parse(json['lastSeen']) : null,
+      inactiveSince: json['inactiveSince'] != null ? DateTime.parse(json['inactiveSince']) : null,
     );
   }
 
@@ -59,6 +68,9 @@ class DeviceModel {
       fixedCurrentPerAerator: fixedCurrentPerAerator,
       lastCalibratedAt: lastCalibratedAt,
       relays: relays ?? this.relays,
+      isActive: isActive,
+      lastSeen: lastSeen,
+      inactiveSince: inactiveSince,
     );
   }
 }

@@ -3,12 +3,9 @@ import 'dart:typed_data';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:smart_synergies/services/background_alarm.dart';
-import 'package:smart_synergies/models/notification_model.dart';
 import 'package:smart_synergies/services/local_notification_service.dart';
-import 'package:smart_synergies/services/alarm_service.dart';
+import 'package:smart_synergies/models/notification_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:smart_synergies/core/app_config.dart';
@@ -36,20 +33,16 @@ Future<void> initLocalNotifications() async {
     onDidReceiveBackgroundNotificationResponse: _onNotificationActionBackground,
   );
 
-  // 1. Loud alarm channel
-  final AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'alarm_channel_v3', // Incremented ID to ensure updates on existing devices
-    'Alarm Notifications (Loud)',
-    description: 'Critical aerator alert notifications',
-    importance: Importance.max,
-    playSound: true,
-    sound: const RawResourceAndroidNotificationSound('alarm'),
-    enableVibration: true,
-  );
+  // 1. Loud alarm channel — created NATIVELY in MainActivity.kt with
+  //    AudioAttributes.USAGE_ALARM so that the sound follows the phone's
+  //    ALARM volume slider, not media/notification volume.
+  //    Do NOT recreate it here from Dart — flutter_local_notifications
+  //    doesn't expose USAGE_ALARM and would overwrite the native channel
+  //    with default (notification stream) audio attributes.
 
-  // 2. Silent alarm channel
+  // 2. Silent alarm channel (safe to create from Dart — no sound)
   const AndroidNotificationChannel silentChannel = AndroidNotificationChannel(
-    'alarm_channel_silent_v2',
+    'alarm_channel_silent_v4',
     'Alarm Notifications (Silent)',
     description: 'Critical aerator alert notifications without sound',
     importance: Importance.max,
@@ -62,11 +55,14 @@ Future<void> initLocalNotifications() async {
         AndroidFlutterLocalNotificationsPlugin
       >();
 
-  await androidPlugin?.createNotificationChannel(channel);
+  // Only create the silent channel from Dart; loud channel is native-only
   await androidPlugin?.createNotificationChannel(silentChannel);
 }
 
-/// Show a local notification with a STOP ALARM action button.
+/// Show an alarm notification.
+/// - On LOCKED screen: Android fires the fullScreenIntent → launches MainActivity → AlarmScreen
+/// - On UNLOCKED screen: Android shows a heads-up banner at the top with the STOP action
+/// - `fullScreenIntent` is always true — Android decides how to present it based on lock state
 Future<void> showAlarmNotification({
   required String title,
   required String body,
@@ -80,8 +76,8 @@ Future<void> showAlarmNotification({
   } catch (_) {}
 
   final String channelId = enableSound
-      ? 'alarm_channel_v3'
-      : 'alarm_channel_silent_v2';
+      ? 'alarm_channel_v5'
+      : 'alarm_channel_silent_v4';
 
   final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     channelId,
@@ -90,6 +86,9 @@ Future<void> showAlarmNotification({
     importance: Importance.max,
     priority: Priority.max,
     fullScreenIntent: fullScreenIntent,
+    // PUBLIC visibility is required so Android shows the notification and
+    // fires the fullScreenIntent over the lock screen
+    visibility: NotificationVisibility.public,
     category: AndroidNotificationCategory.alarm,
     ongoing: true,
     autoCancel: false,
@@ -101,6 +100,8 @@ Future<void> showAlarmNotification({
       const AndroidNotificationAction(
         'stop_alarm',
         '🔕 STOP ALARM',
+        // showsUserInterface=false → action works even from lock screen
+        // without requiring the user to unlock
         showsUserInterface: false,
         cancelNotification: true,
       ),
@@ -112,7 +113,7 @@ Future<void> showAlarmNotification({
   );
 
   await flutterLocalNotificationsPlugin.show(
-    id: 888, // fixed id so we can cancel it
+    id: 888,
     title: title,
     body: body,
     notificationDetails: notificationDetails,
@@ -154,8 +155,14 @@ Future<void> showNormalNotification({
     android: androidDetails,
   );
 
+  // Use a fixed notification ID (888) for aerator alerts so they overwrite each other 
+  // and get cleared properly, rather than piling up in the system tray.
+  final int notificationId = (title.contains('AERATOR ALERT') || title.contains('Aerator Alert'))
+      ? 888
+      : DateTime.now().millisecondsSinceEpoch % 100000;
+
   await flutterLocalNotificationsPlugin.show(
-    id: DateTime.now().millisecondsSinceEpoch % 100000,
+    id: notificationId,
     title: title,
     body: body,
     notificationDetails: notificationDetails,
@@ -167,86 +174,59 @@ Future<void> cancelAlarmNotification() async {
   await flutterLocalNotificationsPlugin.cancel(id: 888);
 }
 
-/// Handles notification action taps (foreground / background)
+/// Handles notification action taps when the app is NOT in foreground.
 @pragma('vm:entry-point')
 void _onNotificationActionBackground(NotificationResponse response) async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint(
-    '🛑 Background Notification Action received: ID=${response.id}, ActionID=${response.actionId}',
+    '[NotifAction-BG] Received: ID=${response.id}, ActionID=${response.actionId}',
   );
 
   if (response.actionId == 'stop_alarm') {
-    // Stop foreground player if any
+    // Note: Audio stopping is handled natively by clearing flutter.alarm_playing
+
+    // Clear all alarm flags so the app shows the correct state when it opens
     try {
-      await AlarmService().stopAlarm();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('alarm_playing', false);
+      await prefs.setBool('flutter.alarm_playing', false);
+      await prefs.setBool('isAlarmStopped', true);
+      await prefs.setBool('flutter.isAlarmStopped', true);
     } catch (_) {}
 
-    // Stop native alarm service via MethodChannel (if main isolate is alive)
     try {
-      const platform = MethodChannel('com.smart_synergies_user.app/alarm');
-      await platform.invokeMethod('stopAlarm');
-    } catch (e) {
-      debugPrint('Error stopping native alarm from background: $e');
-    }
-
-    // Also stop the Flutter-side background isolate alarm if any
-    try {
-      await stopBackgroundAlarm();
+      await cancelAlarmNotification();
     } catch (_) {}
 
-    // Update SharedPreferences flags to trigger the native SharedPreferences listener
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('alarm_playing', false);
-    await prefs.setBool('isAlarmStopped', true);
-    await cancelAlarmNotification();
+    debugPrint('[NotifAction-BG] stop_alarm handled — flags cleared');
   }
 }
 
+/// Handles notification action taps when the app IS in foreground.
 void _onNotificationAction(NotificationResponse response) async {
   debugPrint(
-    '🔔 Local Notification Action received: ID=${response.id}, ActionID=${response.actionId}, Payload=${response.payload}',
+    '[NotifAction-FG] ID=${response.id}, ActionID=${response.actionId}, Payload=${response.payload}',
   );
 
   if (response.actionId == 'stop_alarm') {
-    debugPrint(
-      '🛑 "Stop Alarm" action button pressed from foreground notification',
-    );
-    // Stop foreground player if any
+    debugPrint('[NotifAction-FG] stop_alarm tapped');
+    // Note: Audio stopping is handled natively by clearing flutter.alarm_playing
+
     try {
-      await AlarmService().stopAlarm();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('alarm_playing', false);
+      await prefs.setBool('flutter.alarm_playing', false);
+      await prefs.setBool('isAlarmStopped', true);
+      await prefs.setBool('flutter.isAlarmStopped', true);
     } catch (_) {}
 
     try {
-      const platform = MethodChannel('com.smart_synergies_user.app/alarm');
-      await platform.invokeMethod('stopAlarm');
-    } catch (e) {
-      debugPrint('Error stopping native alarm: $e');
-    }
-    try {
-      await stopBackgroundAlarm();
-    } catch (e) {
-      debugPrint('Error stopping background alarm: $e');
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('alarm_playing', false);
-    await prefs.setBool('isAlarmStopped', true);
-    await cancelAlarmNotification();
+      await cancelAlarmNotification();
+    } catch (_) {}
   } else if (response.payload == 'alarm') {
-    debugPrint('📲 Notification body tapped. Redirecting to Alarm Screen...');
+    // Notification body tapped — navigate to alarm screen
+    debugPrint('[NotifAction-FG] alarm payload tapped — navigating to /alarm');
 
-    // Set alarm flag to ensure dialog shows up
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('alarm_playing', true);
-
-    // Handle redirecting to alarm page when the notification body itself is tapped
-    final Map<String, dynamic> arguments = {
-      'title': 'Aerator Alert', // Fallback title
-      'body': 'Tap to stop alarm.', // Fallback body
-      'isFromNotification': true,
-      'isForegroundTakeover': false,
-    };
-
-    // Use the global navigator key to push the route
     Future.microtask(() async {
       int retryCount = 0;
       while (navigatorKey.currentState == null && retryCount < 10) {
@@ -255,10 +235,16 @@ void _onNotificationAction(NotificationResponse response) async {
       }
 
       if (navigatorKey.currentState != null) {
-        debugPrint('🚀 Navigating to /alarm from local notification tap');
-        navigatorKey.currentState?.pushNamed('/alarm', arguments: arguments);
+        // Read title/body from prefs set by the FCM handler
+        final prefs = await SharedPreferences.getInstance();
+        navigatorKey.currentState?.pushNamed('/alarm', arguments: {
+          'title': prefs.getString('latest_alarm_title') ?? '⚠️ Aerator Alert!',
+          'body': prefs.getString('latest_alarm_body') ?? 'Tap to stop alarm.',
+          'isFromNotification': true,
+          'isForegroundTakeover': false,
+        });
       } else {
-        debugPrint('❌ ERROR: Navigator state still null after retries');
+        debugPrint('[NotifAction-FG] Navigator still null after retries');
       }
     });
   }
@@ -319,59 +305,68 @@ class NotificationServices {
       _handleNotificationClick(message, isForegroundTakeover: false);
     });
 
+    // ── Foreground FCM: App is open and user is actively using it ──────────
+    // In this state: go straight to the pulsing red AlarmScreen.
+    // DO NOT show a notification banner — that's for background/locked states.
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      // Foreground: trigger same background alarm path (with duplicate guard and timed stop)
-      debugPrint(
-        '📥 Foreground FCM received: ID=${message.messageId} | Title=${message.notification?.title}',
-      );
-      // Persist to local storage so it shows in Notifications screen with time/title/body
+      debugPrint('[FCM-FG] Received: ID=${message.messageId} | ${message.notification?.title}');
+
+      // Always persist to history
       try {
         final notification = NotificationModel.fromRemoteMessage(message);
         await LocalNotificationService.saveNotification(notification);
       } catch (e) {
-        debugPrint('Failed to save foreground notification: $e');
+        debugPrint('[FCM-FG] Failed to save notification: $e');
       }
-      final bool shouldTrigger = (message.data['alarm'] == '1') || 
-          (message.notification != null && !(message.notification!.title ?? '').contains('Recovered'));
 
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        
-        if (shouldTrigger) {
-          await prefs.setBool('alarm_playing', true);
-          debugPrint('🔔 Saved alarm_playing = true to SharedPreferences in foreground');
+      final bool shouldTrigger = (message.data['alarm'] == '1') ||
+          (message.notification != null &&
+              !(message.notification!.title ?? '').contains('Recovered'));
 
-          final bool alertSoundEnabled =
-              prefs.getBool('alert_sound_enabled') ?? true;
+      final prefs = await SharedPreferences.getInstance();
+      final bool globalSoundEnabled = prefs.getBool('alert_sound_enabled') ?? true;
+      final List<String> mutedDevices = prefs.getStringList('muted_devices') ?? [];
+      final String? deviceID = message.data['deviceID'];
+      final bool alertSoundEnabled = globalSoundEnabled &&
+          (deviceID == null || !mutedDevices.contains(deviceID));
 
-          if (alertSoundEnabled) {
-            // Play loop sound in foreground
-            await AlarmService().playAlarm();
-          }
-          // Always show local notification with Stop button regardless of sound setting
-          await showAlarmNotification(
-            title: message.notification?.title ?? message.data['title'] ?? '⚠️ Aerator Alert!',
-            body: alertSoundEnabled
-                ? (message.notification?.body ?? message.data['body'] ?? 'Tap to stop alarm.')
-                : (message.notification?.body ?? message.data['body'] ?? 'Alert received.'),
-            enableSound: alertSoundEnabled, // Respect the toggle
-          );
-
-          // IMMEDIATE TAKEOVER: If app is open/foreground, navigate to alarm page automatically
-          debugPrint(
-            '🚀 Foreground takeover: Navigating to Alarm Screen immediately',
-          );
-          _handleNotificationClick(message, isForegroundTakeover: true);
-        } else {
-          // Just show standard local notification for recovery/updates in foreground
-          await showNormalNotification(
-            title: message.notification?.title ?? message.data['title'] ?? 'System Update',
-            body: message.notification?.body ?? message.data['body'] ?? 'All aerators working.',
-          );
-        }
-      } catch (e) {
-        debugPrint('Failed to trigger alarm in foreground: $e');
+      if (!shouldTrigger || !alertSoundEnabled) {
+        // Recovery / update / silent — show a quiet banner
+        await showNormalNotification(
+          title: message.notification?.title ?? message.data['title'] as String? ?? 'System Update',
+          body: message.notification?.body ?? message.data['body'] as String? ?? 'All aerators working.',
+        );
+        return;
       }
+
+      // It's an alarm and the app is in the foreground ──────────────────────
+      final String alarmTitle = message.notification?.title ??
+          message.data['title'] as String? ??
+          '⚠️ Aerator Alert!';
+      final String alarmBody = message.notification?.body ??
+          message.data['body'] as String? ??
+          'Tap to stop alarm.';
+
+
+      // Write flags first so AlarmScreen.initState() reads them correctly
+      await prefs.setBool('alarm_playing', true);
+      await prefs.setBool('flutter.alarm_playing', true);
+      await prefs.setBool('isAlarmStopped', false);
+      await prefs.setBool('flutter.isAlarmStopped', false);
+      await prefs.setString('latest_alarm_title', alarmTitle);
+      await prefs.setString('latest_alarm_body', alarmBody);
+      debugPrint('[FCM-FG] alarm_playing=true, navigating to /alarm');
+
+      // ── Audio is handled natively ──────────────────────────────────────────
+      // SmartSynergiesApplication natively monitors the flutter.alarm_playing
+      // flag and starts AlarmSoundService automatically. We don't need Dart audio.
+
+      // Navigate to the pulsing red AlarmScreen — the screen IS the alarm
+      _navigateToAlarm(
+        title: alarmTitle,
+        body: alarmBody,
+        isForegroundTakeover: true,
+      );
     });
   }
 
@@ -399,17 +394,23 @@ class NotificationServices {
         message.notification?.body ??
         'Tap to stop alarm.';
 
-    if (isAlarm) {
+    final prefs = await SharedPreferences.getInstance();
+    final bool globalSoundEnabled = prefs.getBool('alert_sound_enabled') ?? true;
+    final List<String> mutedDevices = prefs.getStringList('muted_devices') ?? [];
+    final String? deviceID = message.data['deviceID'];
+    final bool alertSoundEnabled = globalSoundEnabled &&
+        (deviceID == null || !mutedDevices.contains(deviceID));
+
+    if (isAlarm && alertSoundEnabled) {
       // Set alarm flag to ensure UI reflects active emergency state
       try {
-        final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('alarm_playing', true);
       } catch (e) {
         debugPrint('Failed to set alarm_playing flag in click handler: $e');
       }
     }
 
-    final String routeName = isAlarm ? '/alarm' : '/notifications';
+    final String routeName = (isAlarm && alertSoundEnabled) ? '/alarm' : '/notifications';
     final Map<String, dynamic> arguments = {
       'title': title,
       'body': body,
@@ -435,24 +436,53 @@ class NotificationServices {
   }
 
   /// _showForegroundAlert removed as per user request to open full screen alert directly.
-  /// The app now navigates immediately using _handleNotificationClick.
 
-  /// Stop native alarm service and clear playing flags
+  /// Navigate to the alarm screen using the global navigator key.
+  /// Retries up to 10 times (2 seconds total) while the navigator is initialising.
+  void _navigateToAlarm({
+    required String title,
+    required String body,
+    bool isForegroundTakeover = false,
+  }) {
+    Future.microtask(() async {
+      int retries = 0;
+      while (navigatorKey.currentState == null && retries < 10) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        retries++;
+      }
+      if (navigatorKey.currentState != null) {
+        debugPrint('[Nav] Pushing /alarm (isForegroundTakeover=$isForegroundTakeover)');
+        navigatorKey.currentState?.pushNamed('/alarm', arguments: {
+          'title': title,
+          'body': body,
+          'isForegroundTakeover': isForegroundTakeover,
+        });
+      } else {
+        debugPrint('[Nav] Navigator still null after retries — cannot show AlarmScreen');
+      }
+    });
+  }
+
+  /// Stop all alarm components and clear all state flags.
   Future<void> stopAlarmNow() async {
+    // 1. (Obsolete) Dart-side audio loop is now handled natively
+    // We no longer call AlarmService() to avoid deadlocks with audioplayers.
+
+    // 2. Dismiss persistent notification (if showing)
     try {
-      await AlarmService().stopAlarm();
+      await cancelAlarmNotification();
     } catch (_) {}
+
+    // 3. Clear all SharedPreferences alarm flags
     try {
-      const platform = MethodChannel('com.smart_synergies_user.app/alarm');
-      await platform.invokeMethod('stopAlarm');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('alarm_playing', false);
+      await prefs.setBool('flutter.alarm_playing', false);
+      await prefs.setBool('isAlarmStopped', true);
+      await prefs.setBool('flutter.isAlarmStopped', true);
     } catch (_) {}
-    try {
-      await stopBackgroundAlarm();
-    } catch (_) {}
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('alarm_playing', false);
-    // Also dismiss the persistent local notification with the Stop button
-    await cancelAlarmNotification();
+
+    debugPrint('[NotificationServices] stopAlarmNow complete');
   }
 
   // Local persistence of notifications disabled per requirement to rely on backend notifications only.

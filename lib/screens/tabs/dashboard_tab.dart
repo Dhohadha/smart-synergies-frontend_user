@@ -10,7 +10,10 @@ import '../../providers/device_provider.dart';
 import '../alerts_history_screen.dart';
 import '../../models/device_model.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/error_screen.dart';
+import '../../providers/server_status_provider.dart';
 
+import '../../widgets/alarm_permission_dialog.dart';
 class DashboardTab extends ConsumerStatefulWidget {
   const DashboardTab({super.key});
   @override
@@ -38,83 +41,167 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? AppColors.surface : const Color(0xFFF8FAFC),
-      body: SafeArea(
-        child: userState.when(
-          data: (user) {
-            if (user == null) {
-              return const Center(child: Text('Please log in.'));
-            }
+      backgroundColor: isDark ? AppColors.surface : AppColors.backgroundLight,
+      body: Stack(
+        children: [
+          // Background ambient glows
+          if (isDark) ...[
+            Positioned(
+              top: -80,
+              right: -80,
+              child: Container(
+                width: 250,
+                height: 250,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.cyan.withValues(alpha: 0.1),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -50,
+              left: -50,
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.blue.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+          ] else ...[
+            Positioned(
+              top: -100,
+              right: -100,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.cyan.withValues(alpha: 0.04),
+                ),
+              ),
+            ),
+          ],
+          SafeArea(
+            child: userState.when(
+              data: (user) {
+                if (user == null) {
+                  return const Center(child: Text('Please log in.'));
+                }
 
-            final assignedDevices =
-                (user['assignedDevices'] as List<dynamic>?)?.cast<String>() ??
-                [];
+                final assignedDevices =
+                    (user['assignedDevices'] as List<dynamic>?)?.cast<String>() ??
+                    [];
 
-            final pendingInvitations =
-                ((user['pendingInvitations'] as List<dynamic>?) ?? [])
-                    .where((i) => (i['status'] ?? 'pending') != 'declined')
-                    .toList();
+                final pendingInvitations =
+                    ((user['pendingInvitations'] as List<dynamic>?) ?? [])
+                        .where((i) => (i['status'] ?? 'pending') != 'declined')
+                        .toList();
 
-            return Column(
-              children: [
-                _header(context, isDark),
-                // Pending invitations banner
-                if (pendingInvitations.isNotEmpty)
-                  _InvitationBanner(
-                    invitations: pendingInvitations
-                        .map((e) => Map<String, dynamic>.from(e))
-                        .toList(),
-                    isDark: isDark,
-                  ),
-                Expanded(
-                  child: assignedDevices.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-                          child: Center(
-                            child: Text(
-                              'No devices assigned to you yet.',
-                              style: GoogleFonts.outfit(color: AppColors.getTextMuted(isDark)),
+                return Column(
+                  children: [
+                    _header(context, isDark),
+                    
+                    // Server Warning Banner
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final hasServerIssue = ref.watch(serverStatusProvider);
+                        if (!hasServerIssue) return const SizedBox.shrink();
+                        return Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.red.withValues(alpha: 0.3),
                             ),
                           ),
-                        )
-                      : Column(
-                          children: [
-                            Expanded(
-                              child: PageView.builder(
-                                controller: _pageController,
-                                physics: const BouncingScrollPhysics(),
-                                itemCount: assignedDevices.length,
-                                itemBuilder: (context, index) {
-                                  final deviceId = assignedDevices[index];
-                                  return _buildDevicePage(context, deviceId, isDark);
-                                },
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning_rounded, color: AppColors.red, size: 20),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Server Issue Detected: All devices are offline.',
+                                  style: GoogleFonts.outfit(
+                                    color: AppColors.red,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            SmoothPageIndicator(
-                              controller: _pageController,
-                              count: assignedDevices.length,
-                              effect: ExpandingDotsEffect(
-                                dotHeight: 6,
-                                dotWidth: 6,
-                                activeDotColor: AppColors.cyan,
-                                dotColor: isDark
-                                    ? AppColors.textMuted
-                                    : AppColors.textMutedLight,
-                                expansionFactor: 3,
-                                spacing: 8,
+                            ],
+                          ),
+                        ).animate().fadeIn().slideY(begin: -0.2, end: 0);
+                      },
+                    ),
+
+                    // Pending invitations banner
+                    if (pendingInvitations.isNotEmpty)
+                      _InvitationBanner(
+                        invitations: pendingInvitations
+                            .map((e) => Map<String, dynamic>.from(e))
+                            .toList(),
+                        isDark: isDark,
+                      ),
+                    Expanded(
+                      child: assignedDevices.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                              child: Center(
+                                child: Text(
+                                  'No devices assigned to you yet.',
+                                  style: GoogleFonts.outfit(color: AppColors.getTextMuted(isDark)),
+                                ),
                               ),
+                            )
+                          : Column(
+                              children: [
+                                Expanded(
+                                  child: PageView.builder(
+                                    controller: _pageController,
+                                    physics: const BouncingScrollPhysics(),
+                                    itemCount: assignedDevices.length,
+                                    itemBuilder: (context, index) {
+                                      final deviceId = assignedDevices[index];
+                                      return _buildDevicePage(context, deviceId, isDark);
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SmoothPageIndicator(
+                                  controller: _pageController,
+                                  count: assignedDevices.length,
+                                  effect: ExpandingDotsEffect(
+                                    dotHeight: 6,
+                                    dotWidth: 6,
+                                    activeDotColor: AppColors.cyan,
+                                    dotColor: isDark
+                                        ? AppColors.textMuted
+                                        : AppColors.textMutedLight,
+                                    expansionFactor: 3,
+                                    spacing: 8,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                          ],
-                        ),
-                ),
-              ],
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Center(child: Text('Error: $e')),
-        ),
+                    ),
+                  ],
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, st) => ErrorScreen(
+                error: e,
+                onRefresh: () => ref.read(userProvider.notifier).fetchUserProfile(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -155,11 +242,11 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+              backgroundColor: AppColors.getSurface(isDark),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
-                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                  color: AppColors.getGlassBorder(isDark),
                   width: 1.0,
                 ),
               ),
@@ -195,7 +282,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                          color: AppColors.getGlassBorder(isDark),
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
@@ -206,7 +293,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                         ),
                       ),
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1A2438) : const Color(0xFFF8FAFC),
+                      fillColor: AppColors.getBackground(isDark),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
                   ),
@@ -298,13 +385,33 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                     letterSpacing: -0.5,
                   ),
                 ),
-                Text(
-                  'System monitoring active',
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    color: AppColors.getTextMuted(isDark),
-                    fontWeight: FontWeight.w500,
-                  ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: AppColors.green,
+                        shape: BoxShape.circle,
+                      ),
+                    ).animate(onPlay: (c) => c.repeat(reverse: true))
+                     .scale(
+                       duration: 1200.ms,
+                       begin: const Offset(0.75, 0.75),
+                       end: const Offset(1.3, 1.3),
+                       curve: Curves.easeInOut,
+                     ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'System monitoring active',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12.5,
+                        color: AppColors.getTextMuted(isDark),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -317,12 +424,12 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
               );
             },
             child: Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1A2438) : const Color(0xFFF1F5F9),
+                color: AppColors.getBackground(isDark),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                  color: AppColors.getGlassBorder(isDark),
                   width: 1.0,
                 ),
               ),
@@ -334,29 +441,36 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
             ),
           ),
           const SizedBox(width: 12),
-          // Small Logo in Header
+          // Small Logo in Header with premium gradient ring
           Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white, // Keep background white so logo blends seamlessly
+            padding: const EdgeInsets.all(2),
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-                width: 1.0,
+              gradient: LinearGradient(
+                colors: [AppColors.cyan, AppColors.blue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
-            child: ClipOval(
-              child: Image.asset(
-                'assets/logo.png',
-                height: 28,
-                width: 28,
-                fit: BoxFit.contain,
+            child: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(isDark),
+                shape: BoxShape.circle,
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/logo.png',
+                  height: 24,
+                  width: 24,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           ),
         ],
       ),
-    );
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.05, end: 0, duration: 400.ms);
   }
 
   Widget _buildDeviceCard(BuildContext context, String deviceId, bool isDark) {
@@ -370,17 +484,17 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF131C2E) : Colors.white,
+            color: AppColors.getSurface(isDark),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-              width: 1.0,
+              color: AppColors.getGlassBorder(isDark),
+              width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.015),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
+                color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.02),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -420,17 +534,6 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                             ),
                           ],
                         ),
-                        if (device.name != null && device.name!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            'ID: $deviceId',
-                            style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              color: AppColors.getTextMuted(isDark),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 2),
                         Text(
                           '${device.totalAerators} Units Connected',
@@ -440,28 +543,77 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: device.isActive ? AppColors.green : AppColors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              device.isActive ? 'Online' : 'Offline',
+                              style: GoogleFonts.outfit(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: device.isActive ? AppColors.green : AppColors.red,
+                              ),
+                            ),
+                            if (!device.isActive && device.inactiveSince != null) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                '(since ${DateFormat('MMM d, h:mm a').format(device.inactiveSince!.toUtc().add(const Duration(hours: 5, minutes: 30)))})',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 11,
+                                  color: AppColors.red.withValues(alpha: 0.8),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ] else if (device.lastSeen != null) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                '(last active ${DateFormat('dd MMM yyyy, hh:mm a').format(device.lastSeen!.toUtc().add(const Duration(hours: 5, minutes: 30)))})',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 11,
+                                  color: AppColors.getTextMuted(isDark),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                  Stack(
+                    alignment: Alignment.center,
                     children: [
-                      Text(
-                        'LOAD',
-                        style: GoogleFonts.outfit(
-                          fontSize: 10,
-                          color: AppColors.getTextMuted(isDark),
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      Text(
-                        '${totalCurrent.toStringAsFixed(1)}A',
-                        style: GoogleFonts.outfit(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.cyan,
-                        ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'LOAD',
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: AppColors.getTextMuted(isDark),
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          Text(
+                            '${totalCurrent.toStringAsFixed(1)}A',
+                            style: GoogleFonts.outfit(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.cyan,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -489,10 +641,10 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           height: 88,
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1A2438) : const Color(0xFFF8FAFC),
+                            color: AppColors.getBackground(isDark),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                              color: AppColors.getGlassBorder(isDark),
                               width: 1.0,
                             ),
                           ),
@@ -519,19 +671,13 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                                       color: _getAeratorStatusColor(device),
                                       shape: BoxShape.circle,
                                     ),
-                                  ).animate(onPlay: (c) => c.repeat(reverse: true))
-                                   .scale(
-                                     duration: 1500.ms,
-                                     begin: const Offset(0.8, 0.8),
-                                     end: const Offset(1.2, 1.2),
-                                     curve: Curves.easeInOut,
-                                   ),
-                                  const SizedBox(width: 8),
+                                  ),
+                                  const SizedBox(width: 10),
                                   Text(
                                     '${device.workingAerators} / ${device.totalAerators}',
                                     style: GoogleFonts.outfit(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
                                       color: AppColors.getTextPrimary(isDark),
                                     ),
                                   ),
@@ -549,10 +695,10 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           height: 88,
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1A2438) : const Color(0xFFF8FAFC),
+                            color: AppColors.getBackground(isDark),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                              color: AppColors.getGlassBorder(isDark),
                               width: 1.0,
                             ),
                           ),
@@ -605,10 +751,10 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                   Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1A2438) : const Color(0xFFF8FAFC),
+                      color: AppColors.getSurface(isDark),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                        color: AppColors.getGlassBorder(isDark),
                         width: 1.0,
                       ),
                     ),
@@ -644,7 +790,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
               ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.04, end: 0, duration: 400.ms, curve: Curves.easeOutQuad),
               const SizedBox(height: 24),
               Divider(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                color: AppColors.getGlassBorder(isDark),
                 height: 1,
               ),
               const SizedBox(height: 16),
@@ -698,19 +844,23 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                       final message = item['message'] ?? 'Unknown alert';
                       final date = DateTime.parse(item['timestamp']).toLocal();
                       final timeStr = DateFormat('hh:mm a').format(date);
+                      final isAlert = item['type'] == 'Alert';
+                      final indicatorColor = isAlert ? AppColors.red : AppColors.green;
                       
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.only(bottom: 12),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              margin: const EdgeInsets.only(top: 5),
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: AppColors.red,
-                                shape: BoxShape.circle,
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: indicatorColor,
+                                  shape: BoxShape.circle,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -718,20 +868,21 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                               child: Text(
                                 message,
                                 style: GoogleFonts.outfit(
-                                  fontSize: 12.5,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.getTextPrimary(isDark),
+                                  height: 1.3,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 12),
                             Text(
                               timeStr,
                               style: GoogleFonts.outfit(
-                                  fontSize: 11,
-                                  color: AppColors.getTextMuted(isDark),
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                fontSize: 11,
+                                color: AppColors.getTextMuted(isDark),
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                         ),
@@ -768,10 +919,10 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
         height: 200,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          color: AppColors.getSurface(isDark),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            color: AppColors.getGlassBorder(isDark),
             width: 1.0,
           ),
         ),
@@ -781,10 +932,10 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
         height: 100,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          color: AppColors.getSurface(isDark),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+            color: AppColors.getGlassBorder(isDark),
             width: 1.0,
           ),
         ),
@@ -796,61 +947,143 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
     );
   }
 
-  Widget _phaseItem(String label, double val, Color color, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
+  Widget _buildAlertPin({required bool isAlert, required bool isDark}) {
+    final baseColor = isAlert ? AppColors.red : AppColors.green;
+    
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (isAlert)
+            // Pulsing glow ring for critical alerts
             Container(
-              width: 5,
-              height: 5,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: color,
+                color: baseColor.withValues(alpha: 0.2),
               ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.outfit(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: AppColors.getTextMuted(isDark),
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '${val.toStringAsFixed(1)}A',
-          style: GoogleFonts.outfit(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: AppColors.getTextPrimary(isDark),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          height: 3,
-          width: 80,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(1.5),
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-          ),
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: (val / 15).clamp(0.0, 1.0),
-            child: Container(
+            )
+            .animate(onPlay: (controller) => controller.repeat())
+            .scale(
+              duration: 1800.ms,
+              begin: const Offset(0.7, 0.7),
+              end: const Offset(1.4, 1.4),
+              curve: Curves.easeOut,
+            )
+            .fadeOut(duration: 1800.ms)
+          else
+            // Subtle static glow for recovered state
+            Container(
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(1.5),
-                color: color.withValues(alpha: 0.85),
+                shape: BoxShape.circle,
+                color: baseColor.withValues(alpha: 0.1),
+              ),
+            ),
+            
+          // Middle ring with border
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: baseColor.withValues(alpha: 0.15),
+              border: Border.all(
+                color: baseColor.withValues(alpha: 0.3),
+                width: 1,
               ),
             ),
           ),
-        ),
-      ],
+          
+          // Inner solid badge containing icon
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: baseColor,
+              boxShadow: [
+                BoxShadow(
+                  color: baseColor.withValues(alpha: 0.3),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              isAlert ? Icons.warning_rounded : Icons.check_rounded,
+              size: 12,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _phaseItem(String label, double val, Color color, bool isDark) {
+    return SizedBox(
+      width: 90,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.getTextMuted(isDark),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${val.toStringAsFixed(1)}A',
+            style: GoogleFonts.outfit(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.getTextPrimary(isDark),
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Clean progress bar
+          Container(
+            height: 3.5,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(2),
+              color: AppColors.getGlassBorder(isDark).withValues(alpha: 0.15),
+            ),
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: (val / 15.0).clamp(0.0, 1.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -1,6 +1,7 @@
 package com.smart_synergies_user.app
 
 import android.content.Intent
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.media.AudioAttributes
@@ -12,30 +13,35 @@ import io.flutter.plugins.GeneratedPluginRegistrant
 import android.os.PowerManager
 import android.provider.Settings
 import android.content.Context
-import java.io.File
+import android.app.KeyguardManager
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.smart_synergies_user.app/alarm"
-    private val NOTIF_CHANNEL_ID = "alarm_channel_v2"
-    private val SILENT_CHANNEL_ID = "alarm_channel_silent"
+    private val NOTIF_CHANNEL_ID = "alarm_channel_v5"
+    private val SILENT_CHANNEL_ID = "alarm_channel_silent_v4"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        // Register plugins
         GeneratedPluginRegistrant.registerWith(flutterEngine)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startAlarm" -> {
-                    // Stubbed - handled in Dart via flutter_local_notifications and audioplayers
+                    val serviceIntent = Intent(this@MainActivity, AlarmSoundService::class.java)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        startForegroundService(serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
                     result.success(true)
                 }
                 "stopAlarm" -> {
-                    // Stubbed - handled in Dart
+                    val serviceIntent = Intent(this@MainActivity, AlarmSoundService::class.java)
+                    serviceIntent.action = AlarmSoundService.ACTION_STOP
+                    startService(serviceIntent)
                     result.success(true)
                 }
                 "checkFullScreenPermission" -> {
-                    val hasPermission = checkFullScreenPermission()
-                    result.success(hasPermission)
+                    result.success(checkFullScreenPermission())
                 }
                 "openFullScreenSettings" -> {
                     openFullScreenSettings()
@@ -53,9 +59,46 @@ class MainActivity: FlutterActivity() {
                     openAutoStartSettings()
                     result.success(true)
                 }
+                "openNotificationSettings" -> {
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        fallbackIntent.data = android.net.Uri.parse("package:$packageName")
+                        fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(fallbackIntent)
+                    }
+                    result.success(true)
+                }
                 "closeApp" -> {
                     finishAndRemoveTask()
                     result.success(true)
+                }
+                // Returns true when the keyguard (lock screen) is currently showing.
+                // Used by Flutter to decide whether to show the alarm screen or a notification.
+                "isScreenLocked" -> {
+                    val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+                    result.success(km.isKeyguardLocked)
+                }
+                "removeLockScreenFlags" -> {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                        setShowWhenLocked(false)
+                        setTurnScreenOn(false)
+                    }
+                    window.clearFlags(
+                        android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                        android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        android.view.WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+                    )
+                    result.success(true)
+                }
+                "checkAlarmStatus" -> {
+                    val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                    result.success(prefs.getBoolean("flutter.alarm_playing", false))
                 }
                 else -> {
                     result.notImplemented()
@@ -67,48 +110,17 @@ class MainActivity: FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        configureLockScreenFlags()
+
         if (intent.getBooleanExtra("finish", false)) {
             finishAndRemoveTask()
         }
     }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
-        val isLauncherIntent = intent != null && 
-                               Intent.ACTION_MAIN == intent.action && 
-                               intent.hasCategory(Intent.CATEGORY_LAUNCHER)
-
-        if (!isLauncherIntent) {
-            val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-            if (!km.isKeyguardLocked) {
-                val isNotificationTap = intent?.hasExtra("notificationId") == true || 
-                                        intent?.hasExtra("payload") == true || 
-                                        intent?.hasExtra("selectNotification") == true ||
-                                        intent?.action?.contains("SELECT_NOTIFICATION") == true
-
-                if (!isNotificationTap) {
-                    finish()
-                    return
-                }
-            }
-        }
-
         super.onCreate(savedInstanceState)
-        
-        // Allow the activity to be shown over the lock screen and wake the device
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            window.addFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
-        }
-        
-        // Ensure volume buttons control the Alarm stream by default
+        configureLockScreenFlags()
         volumeControlStream = android.media.AudioManager.STREAM_ALARM
-        
         createAlarmNotificationChannel()
     }
 
@@ -116,10 +128,7 @@ class MainActivity: FlutterActivity() {
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
             val prefs = getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
             val isPlaying = prefs.getBoolean("flutter.alarm_playing", false)
-            if (isPlaying) {
-                // Return true to consume the event and prevent system volume change/silencing
-                return true
-            }
+            if (isPlaying) return true
         }
         return super.onKeyDown(keyCode, event)
     }
@@ -128,9 +137,7 @@ class MainActivity: FlutterActivity() {
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
             val prefs = getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE)
             val isPlaying = prefs.getBoolean("flutter.alarm_playing", false)
-            if (isPlaying) {
-                return true
-            }
+            if (isPlaying) return true
         }
         return super.onKeyUp(keyCode, event)
     }
@@ -154,21 +161,26 @@ class MainActivity: FlutterActivity() {
     private fun createAlarmNotificationChannel() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java) ?: return
-            
-            // 1. Loud channel
+
+            // 1. Loud channel — PUBLIC visibility enables full-screen intent on lock screen
             if (manager.getNotificationChannel(NOTIF_CHANNEL_ID) == null) {
                 val channel = NotificationChannel(
                     NOTIF_CHANNEL_ID,
                     "Critical Alerts (Loud)",
                     NotificationManager.IMPORTANCE_HIGH
                 )
-                // Use null for sound and vibration to rely on BackgroundAudioService
-                // which uses the ALARM stream correctly.
-                channel.setSound(null, null)
-                channel.enableVibration(false)
+                val soundUri = Uri.parse("android.resource://" + packageName + "/" + R.raw.alarm)
+                val audioAttributes = AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .build()
+                channel.setSound(soundUri, audioAttributes)
+                channel.enableVibration(true)
+                // VISIBILITY_PUBLIC ensures Android fires the fullScreenIntent over the lock screen
+                channel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 manager.createNotificationChannel(channel)
             }
-            
+
             // 2. Silent channel
             if (manager.getNotificationChannel(SILENT_CHANNEL_ID) == null) {
                 val silentChannel = NotificationChannel(
@@ -178,12 +190,65 @@ class MainActivity: FlutterActivity() {
                 )
                 silentChannel.setSound(null, null)
                 silentChannel.enableVibration(false)
+                silentChannel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 manager.createNotificationChannel(silentChannel)
             }
         }
     }
 
+    private fun configureLockScreenFlags() {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val isAlarmPlaying = prefs.getBoolean("flutter.alarm_playing", false)
 
+        if (isAlarmPlaying) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            }
+
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+            )
+
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                km.requestDismissKeyguard(this, null)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+            }
+
+            // WakeLock to force screen on when the alarm fires
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                @Suppress("DEPRECATION")
+                val wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                    "SmartSynergies:AlarmWakeLock"
+                )
+                wakeLock.acquire(10000L) // 10 seconds — enough for Flutter to boot fully
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Failed to acquire wake lock: ${e.message}")
+            }
+        } else {
+            // Alarm is NOT active! Explicitly clear lock screen flags to keep app secure.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(false)
+                setTurnScreenOn(false)
+            }
+            window.clearFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+            )
+        }
+    }
 
     private fun openAutoStartSettings() {
         val intents = arrayOf(
@@ -212,7 +277,6 @@ class MainActivity: FlutterActivity() {
         }
 
         if (!found) {
-            // Fallback to app info page
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             intent.data = Uri.parse("package:$packageName")
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

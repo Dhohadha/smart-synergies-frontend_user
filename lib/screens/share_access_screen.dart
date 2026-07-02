@@ -814,7 +814,7 @@ class _SharedUsersListState extends State<_SharedUsersList> {
                 final status = user['status'] as String;
                 final isPending = status == 'Pending';
                 final isDeclined = status == 'Declined';
-                final isAccepted = status == 'Accepted';
+
                 final email = user['email'] as String;
                 final isRevoking = _revoking.contains(email);
                 final uDevices = List<String>.from(user['devices'] ?? []);

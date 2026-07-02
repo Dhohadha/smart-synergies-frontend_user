@@ -9,8 +9,143 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/glass_card.dart';
 import '../share_access_screen.dart';
-import '../../core/app_config.dart';
 import '../../widgets/confirmation_dialog.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../../widgets/alarm_permission_dialog.dart';
+import '../../widgets/error_screen.dart';
+
+class _PermissionStatusSection extends StatefulWidget {
+  const _PermissionStatusSection();
+
+  @override
+  State<_PermissionStatusSection> createState() => _PermissionStatusSectionState();
+}
+
+class _PermissionStatusSectionState extends State<_PermissionStatusSection> with WidgetsBindingObserver {
+  bool _hasFullScreenIntent = true;
+  bool _hasNotificationPermission = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissions();
+    }
+  }
+
+  Future<void> _checkPermissions() async {
+    final hasFullScreen = await AlarmPermissionHelper.isGranted();
+    
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    final androidImplementation = flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    bool hasNotif = true;
+    if (androidImplementation != null) {
+      hasNotif = await androidImplementation.areNotificationsEnabled() ?? false;
+    }
+
+    if (mounted) {
+      setState(() {
+        _hasFullScreenIntent = hasFullScreen;
+        _hasNotificationPermission = hasNotif;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return Column(
+      children: [
+        if (!_hasFullScreenIntent)
+          _buildPermissionRow(
+            context,
+            Icons.screen_lock_portrait_rounded,
+            AppColors.red,
+            'Lock-Screen Alarm Disabled',
+            'Tap to enable Full Screen Intent',
+            () async {
+              try {
+                const platform = MethodChannel('com.smart_synergies_user.app/alarm');
+                await platform.invokeMethod('openFullScreenSettings');
+              } catch (_) {}
+            },
+            isDark,
+          ),
+        if (!_hasFullScreenIntent)
+          Divider(height: 1, color: AppColors.getGlassBorder(isDark), indent: 16, endIndent: 16),
+          
+        if (!_hasNotificationPermission)
+          _buildPermissionRow(
+            context,
+            Icons.notifications_off_rounded,
+            AppColors.orange,
+            'Notifications Disabled',
+            'Tap to allow app notifications',
+            () async {
+              try {
+                const platform = MethodChannel('com.smart_synergies_user.app/alarm');
+                await platform.invokeMethod('openNotificationSettings');
+              } catch (_) {}
+            },
+            isDark,
+          ),
+        if (!_hasNotificationPermission)
+          Divider(height: 1, color: AppColors.getGlassBorder(isDark), indent: 16, endIndent: 16),
+      ],
+    );
+  }
+
+  Widget _buildPermissionRow(BuildContext context, IconData icon, Color c, String title, String sub, VoidCallback onTap, bool isDark) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(children: [
+          Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: c.withValues(alpha: 0.12)),
+              child: Icon(icon, color: c, size: 18)),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(title,
+                    style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: c)),
+                Text(sub,
+                    style: GoogleFonts.outfit(
+                        fontSize: 11, color: AppColors.getTextMuted(isDark))),
+              ])),
+          Icon(Icons.arrow_forward_ios_rounded,
+              size: 14,
+              color: AppColors.getTextMuted(isDark).withValues(alpha: 0.5)),
+        ]),
+      ),
+    );
+  }
+}
+
 
 final logoutLoadingProvider = StateProvider<bool>((ref) => false);
 
@@ -22,96 +157,148 @@ class ProfileTab extends ConsumerWidget {
     final userState = ref.watch(userProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return SafeArea(
-      child: userState.when(
-        data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Please log in.'));
-          }
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.surface : AppColors.backgroundLight,
+      body: Stack(
+        children: [
+          // Background ambient glows
+          if (isDark) ...[
+            Positioned(
+              top: -80,
+              right: -80,
+              child: Container(
+                width: 250,
+                height: 250,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.blue.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -50,
+              left: -50,
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.cyan.withValues(alpha: 0.06),
+                ),
+              ),
+            ),
+          ] else ...[
+            Positioned(
+              top: -100,
+              right: -100,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.blue.withValues(alpha: 0.03),
+                ),
+              ),
+            ),
+          ],
+          SafeArea(
+            child: userState.when(
+              data: (user) {
+                if (user == null) {
+                  return const Center(child: Text('Please log in.'));
+                }
 
-          final assignedDevices =
-              (user['assignedDevices'] as List<dynamic>?)?.cast<String>() ?? [];
-          final sharedWith =
-              (user['sharedWith'] as List<dynamic>?)?.cast<String>() ?? [];
-          final bool alertSoundEnabled = user['settings']?['alertSoundEnabled'] ?? true;
-          final userName = user['name'] ?? 'User';
-          final userEmail = user['email'] ?? '';
-          final userRole = user['isSharedUser'] == true ? 'Shared User' : 'Owner';
+                final assignedDevices =
+                    (user['assignedDevices'] as List<dynamic>?)?.cast<String>() ?? [];
+                final sharedWith =
+                    (user['sharedWith'] as List<dynamic>?)?.cast<String>() ?? [];
+                final bool alertSoundEnabled = user['settings']?['alertSoundEnabled'] ?? true;
+                final List<String> mutedDevices = List<String>.from(
+                    user['settings']?['mutedDevices'] ?? []);
+                final userName = user['name'] ?? 'User';
+                final userEmail = user['email'] ?? '';
+                final userRole = user['isSharedUser'] == true ? 'Shared User' : 'Owner';
 
-          return ListView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 30),
-            children: [
-              _profileHero(context, ref, userName, userEmail, userRole, assignedDevices.length, isDark)
-                  .animate()
-                  .fadeIn(duration: 600.ms)
-                  .slideY(begin: 0.05, end: 0),
-              const SizedBox(height: 12),
-              _sectionLabel(
-                Icons.devices_rounded,
-                'Assigned Devices',
-                isDark,
-                trailing: assignedDevices.length > 1
-                    ? IconButton(
-                        icon: const Icon(Icons.reorder_rounded, color: AppColors.cyan, size: 20),
-                        constraints: const BoxConstraints(),
-                        padding: EdgeInsets.zero,
-                        tooltip: 'Prioritize / Reorder',
-                        onPressed: () => _showReorderDevicesDialog(context, ref, assignedDevices, isDark),
-                      )
-                    : null,
-              )
-                  .animate()
-                  .fadeIn(duration: 500.ms, delay: 150.ms),
-              _assignedDevicesList(ref, assignedDevices, isDark)
-                  .animate()
-                  .fadeIn(duration: 500.ms, delay: 200.ms),
-              const SizedBox(height: 12),
-              
-              // Invitations Section (only show pending, not declined)
-              if ((user['pendingInvitations'] as List<dynamic>? ?? [])
-                  .where((i) => (i['status'] ?? 'pending') != 'declined')
-                  .isNotEmpty) ...[
-                _sectionLabel(Icons.mark_email_unread_rounded, 'Access Requests', isDark)
-                    .animate()
-                    .fadeIn(duration: 500.ms, delay: 220.ms),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: (user['pendingInvitations'] as List<dynamic>)
+                return ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 30),
+                  children: [
+                    _profileHero(context, ref, userName, userEmail, userRole, assignedDevices.length, isDark)
+                        .animate()
+                        .fadeIn(duration: 600.ms)
+                        .slideY(begin: 0.05, end: 0),
+                    const SizedBox(height: 12),
+                    _sectionLabel(
+                      Icons.devices_rounded,
+                      'Assigned Devices',
+                      isDark,
+                      trailing: assignedDevices.length > 1
+                          ? IconButton(
+                              icon: const Icon(Icons.menu_rounded, color: AppColors.cyan, size: 20),
+                              constraints: const BoxConstraints(),
+                              padding: EdgeInsets.zero,
+                              tooltip: 'Prioritize / Reorder',
+                              onPressed: () => _showReorderDevicesDialog(context, ref, assignedDevices, isDark),
+                            )
+                          : null,
+                    )
+                        .animate()
+                        .fadeIn(duration: 500.ms, delay: 150.ms),
+                    _assignedDevicesList(ref, assignedDevices, isDark)
+                        .animate()
+                        .fadeIn(duration: 500.ms, delay: 200.ms),
+                    const SizedBox(height: 12),
+                    
+                    // Invitations Section (only show pending, not declined)
+                    if ((user['pendingInvitations'] as List<dynamic>? ?? [])
                         .where((i) => (i['status'] ?? 'pending') != 'declined')
-                        .map((invite) => _ProfileInvitationItem(
-                              invite: Map<String, dynamic>.from(invite),
-                              ref: ref,
-                              isDark: isDark,
-                            ))
-                        .toList(),
-                  ),
-                ).animate().fadeIn(duration: 500.ms, delay: 240.ms),
-                const SizedBox(height: 12),
-              ],
+                        .isNotEmpty) ...[
+                      _sectionLabel(Icons.mark_email_unread_rounded, 'Access Requests', isDark)
+                          .animate()
+                          .fadeIn(duration: 500.ms, delay: 220.ms),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          children: (user['pendingInvitations'] as List<dynamic>)
+                              .where((i) => (i['status'] ?? 'pending') != 'declined')
+                              .map((invite) => _ProfileInvitationItem(
+                                    invite: Map<String, dynamic>.from(invite),
+                                    ref: ref,
+                                    isDark: isDark,
+                                  ))
+                              .toList(),
+                        ),
+                      ).animate().fadeIn(duration: 500.ms, delay: 240.ms),
+                      const SizedBox(height: 12),
+                    ],
 
-              if (userRole == 'Owner') ...[
-                _sectionLabel(Icons.share_rounded, 'Device Management', isDark)
-                    .animate()
-                    .fadeIn(duration: 500.ms, delay: 250.ms),
-                _managementSection(context, ref, sharedWith, isDark)
-                    .animate()
-                    .fadeIn(duration: 500.ms, delay: 300.ms),
-              ],
-              _sectionLabel(Icons.settings_rounded, 'Settings', isDark)
-                  .animate()
-                  .fadeIn(duration: 500.ms, delay: 450.ms),
-              _settingsSection(context, ref, alertSoundEnabled, isDark)
-                  .animate()
-                  .fadeIn(duration: 500.ms, delay: 500.ms),
-              const SizedBox(height: 12),
-              _logoutBtn(context, ref, isDark).animate().fadeIn(duration: 500.ms, delay: 600.ms),
-            ],
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+                    if (userRole == 'Owner') ...[
+                      _sectionLabel(Icons.share_rounded, 'Device Management', isDark)
+                          .animate()
+                          .fadeIn(duration: 500.ms, delay: 250.ms),
+                      _managementSection(context, ref, sharedWith, isDark)
+                          .animate()
+                          .fadeIn(duration: 500.ms, delay: 300.ms),
+                    ],
+                    _sectionLabel(Icons.settings_rounded, 'Settings', isDark)
+                        .animate()
+                        .fadeIn(duration: 500.ms, delay: 450.ms),
+                    _settingsSection(context, ref, alertSoundEnabled, assignedDevices, mutedDevices, isDark)
+                        .animate()
+                        .fadeIn(duration: 500.ms, delay: 500.ms),
+                    const SizedBox(height: 12),
+                    _logoutBtn(context, ref, isDark).animate().fadeIn(duration: 500.ms, delay: 600.ms),
+                  ],
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => ErrorScreen(
+                error: e,
+                onRefresh: () => ref.read(userProvider.notifier).fetchUserProfile(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -125,104 +312,141 @@ class ProfileTab extends ConsumerWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.blue.withValues(alpha: 0.25),
-            AppColors.cyan.withValues(alpha: 0.08)
-          ],
+          colors: isDark
+              ? [
+                  AppColors.getSurface(isDark).withValues(alpha: 0.85),
+                  AppColors.getBackground(isDark).withValues(alpha: 0.9),
+                ]
+              : [
+                  AppColors.getBackground(isDark),
+                  AppColors.getSurface(isDark),
+                ],
         ),
-        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.15)),
+        border: Border.all(
+          color: isDark
+              ? AppColors.cyan.withValues(alpha: 0.15)
+              : AppColors.cyan.withValues(alpha: 0.1),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-              color: isDark
-                  ? AppColors.blue.withValues(alpha: 0.1)
-                  : Colors.blueGrey.withValues(alpha: 0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 8))
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.3)
+                : Colors.blueGrey.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
         ],
       ),
       child: Column(children: [
         Row(children: [
           Stack(children: [
             Container(
-              width: 74,
-              height: 74,
-              decoration: BoxDecoration(
+              width: 76,
+              height: 76,
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                    colors: [AppColors.cyan, AppColors.blue],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight),
-                boxShadow: [
-                  BoxShadow(
-                      color: AppColors.cyan.withValues(alpha: 0.3),
-                      blurRadius: 16)
-                ],
+                color: AppColors.cyan,
               ),
               child: Center(
-                  child: Text(name.isNotEmpty ? name[0] : 'U',
-                      style: GoogleFonts.outfit(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white))),
+                child: Text(
+                  name.isNotEmpty ? name[0] : 'U',
+                  style: GoogleFonts.outfit(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             ),
             Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: AppColors.green,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: AppColors.getBackground(isDark), width: 2.5),
+              bottom: 2,
+              right: 2,
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: AppColors.green,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.getSurface(isDark),
+                    width: 2.5,
                   ),
-                )),
+                ),
+              ),
+            ),
           ]),
           const SizedBox(width: 16),
           Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
                     Expanded(
-                      child: Text(name,
-                          style: GoogleFonts.outfit(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.getTextPrimary(isDark)),
-                          overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        name,
+                        style: GoogleFonts.outfit(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.getTextPrimary(isDark),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.edit_rounded, color: AppColors.cyan, size: 18),
                       constraints: const BoxConstraints(),
                       padding: EdgeInsets.zero,
-                      tooltip: 'Edit Name',
+                      tooltip: 'Edit Display Name',
                       onPressed: () => _showEditNameDialog(context, ref, name, isDark),
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(role,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.cyan.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    role,
                     style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: AppColors.cyan,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
-                Text(email,
-                    style: GoogleFonts.outfit(
-                        fontSize: 12, color: AppColors.getTextMuted(isDark))),
-              ])),
+                      fontSize: 11,
+                      color: AppColors.cyan,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  email,
+                  style: GoogleFonts.outfit(
+                    fontSize: 12.5,
+                    color: AppColors.getTextMuted(isDark),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ]),
         const SizedBox(height: 24),
         Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-              color: AppColors.getGlassBg(isDark),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.getGlassBorder(isDark))),
+            color: isDark
+                ? AppColors.getBackground(isDark).withValues(alpha: 0.4)
+                : AppColors.cyan.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? AppColors.getGlassBorder(isDark).withValues(alpha: 0.1)
+                  : AppColors.cyan.withValues(alpha: 0.12),
+            ),
+          ),
           child: Row(children: [
             _pStat(context, totalDevices.toString(), 'Devices', isDark),
           ]),
@@ -358,7 +582,6 @@ class ProfileTab extends ConsumerWidget {
     ]));
   }
 
-
   Widget _sectionLabel(IconData icon, String label, bool isDark, {Widget? trailing}) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
         child: Row(
@@ -374,7 +597,7 @@ class ProfileTab extends ConsumerWidget {
                       color: AppColors.cyan,
                       letterSpacing: 0.3)),
             ]),
-            ?trailing,
+            if (trailing != null) trailing,
           ],
         ),
       );
@@ -389,46 +612,47 @@ class ProfileTab extends ConsumerWidget {
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.getSurface(isDark),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: AppColors.getGlassBorder(isDark), width: 1.5),
       ),
       child: Column(
-        children: assignedDevices.map((id) {
+        children: assignedDevices.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final id = entry.value;
           final deviceState = ref.watch(deviceProvider(id)).value;
           final displayName = deviceState?.name != null && deviceState!.name!.isNotEmpty
               ? deviceState.name!
               : 'Device $id';
 
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              border: idx < assignedDevices.length - 1
+                  ? Border(bottom: BorderSide(color: AppColors.getGlassBorder(isDark).withValues(alpha: 0.1), width: 1))
+                  : null,
+            ),
             child: Row(
               children: [
-                const Icon(Icons.developer_board_rounded, color: AppColors.cyan, size: 20),
-                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.cyan.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.assignment_rounded, color: AppColors.cyan, size: 18),
+                ),
+                const SizedBox(width: 14),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        displayName,
-                        style: GoogleFonts.outfit(
-                          color: AppColors.getTextPrimary(isDark),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (deviceState?.name != null && deviceState!.name!.isNotEmpty)
-                        Text(
-                          'ID: $id',
-                          style: GoogleFonts.outfit(
-                            color: AppColors.getTextMuted(isDark),
-                            fontSize: 11,
-                          ),
-                        ),
-                    ],
+                  child: Text(
+                    displayName,
+                    style: GoogleFonts.outfit(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ],
@@ -498,9 +722,14 @@ class ProfileTab extends ConsumerWidget {
     );
   }
 
-  Widget _settingsSection(BuildContext context, WidgetRef ref, bool alertSoundEnabled, bool isDark) {
+  Widget _settingsSection(BuildContext context, WidgetRef ref, bool alertSoundEnabled,
+      List<String> assignedDevices, List<String> mutedDevices, bool isDark) {
     final themeMode = ref.watch(themeProvider);
     final isDarkModeEnabled = themeMode == ThemeMode.dark;
+    final bool multiDevice = assignedDevices.length > 1;
+
+    // For multi-device: master toggle reflects whether ALL devices are unmuted
+    final bool allUnmuted = mutedDevices.isEmpty;
 
     return GlassCard(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -512,27 +741,29 @@ class ProfileTab extends ConsumerWidget {
         }, isDark),
         Divider(
             height: 1,
-            color: AppColors.getGlassBorder(isDark),
+            color: AppColors.getGlassBorder(isDark).withValues(alpha: 0.1),
             indent: 16,
             endIndent: 16),
-        _settingRow(context, Icons.volume_up_rounded, AppColors.teal,
-            'Sound Alerts', alertSoundEnabled, (val) {
-          ref.read(userProvider.notifier).updateAlertSound(val);
-        }, isDark),
-        Divider(
-            height: 1,
-            color: AppColors.getGlassBorder(isDark),
-            indent: 16,
-            endIndent: 16),
-        _serverConnectionRow(context, ref, isDark),
+        // Single device: simple global toggle
+        if (!multiDevice)
+          _settingRow(context, Icons.volume_up_rounded, AppColors.teal,
+              'Sound Alerts', alertSoundEnabled, (val) {
+            ref.read(userProvider.notifier).updateAlertSound(val);
+          }, isDark)
+        else
+          // Multi-device: tap to open per-device bottom sheet
+          _soundAlertMultiRow(
+              context, ref, assignedDevices, mutedDevices, allUnmuted, isDark),
+        const _PermissionStatusSection(),
       ]),
     );
   }
 
-  Widget _serverConnectionRow(BuildContext context, WidgetRef ref, bool isDark) {
+  Widget _soundAlertMultiRow(BuildContext context, WidgetRef ref,
+      List<String> devices, List<String> mutedDevices, bool allUnmuted, bool isDark) {
     return InkWell(
-      onTap: () => _showServerIPDialog(context, ref, isDark),
       borderRadius: BorderRadius.circular(12),
+      onTap: () => _showDeviceSoundSheet(context, ref, devices, mutedDevices, isDark),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(children: [
@@ -541,117 +772,174 @@ class ProfileTab extends ConsumerWidget {
               height: 36,
               decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  color: AppColors.cyan.withValues(alpha: 0.12)),
-              child: const Icon(Icons.wifi_tethering_rounded, color: AppColors.cyan, size: 18)),
+                  color: AppColors.teal.withValues(alpha: 0.12)),
+              child: const Icon(Icons.volume_up_rounded,
+                  color: AppColors.teal, size: 18)),
           const SizedBox(width: 12),
           Expanded(
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text('Server Connection',
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Sound Alerts',
+                      style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.getTextPrimary(isDark))),
+                  Text(
+                    mutedDevices.isEmpty
+                        ? 'All devices'
+                        : mutedDevices.length == devices.length
+                            ? 'All muted'
+                            : '${devices.length - mutedDevices.length}/${devices.length} active',
                     style: GoogleFonts.outfit(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.getTextPrimary(isDark))),
-                Text('Active IP: ${AppConfig.serverIP}',
-                    style: GoogleFonts.outfit(
-                        fontSize: 11, color: AppColors.getTextMuted(isDark))),
-              ])),
-          Icon(Icons.arrow_forward_ios_rounded,
-              size: 14,
-              color: AppColors.getTextMuted(isDark).withValues(alpha: 0.5)),
+                        fontSize: 11,
+                        color: mutedDevices.isEmpty
+                            ? AppColors.green
+                            : AppColors.getTextMuted(isDark),
+                        fontWeight: FontWeight.w500),
+                  ),
+                ],
+              )),
+          Icon(Icons.chevron_right_rounded,
+              color: AppColors.getTextMuted(isDark), size: 20),
         ]),
       ),
     );
   }
 
-  void _showServerIPDialog(BuildContext context, WidgetRef ref, bool isDark) {
-    final ipController = TextEditingController(text: AppConfig.serverIP);
+  void _showDeviceSoundSheet(BuildContext context, WidgetRef ref,
+      List<String> devices, List<String> currentMuted, bool isDark) {
+    List<String> pendingMuted = List.from(currentMuted);
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppColors.getSurface(isDark),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(
-            'Server IP Settings',
-            style: GoogleFonts.outfit(
-              fontWeight: FontWeight.w800,
-              color: AppColors.getTextPrimary(isDark),
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Enter the IP address of your local Node.js server. For Android Emulator, use 10.0.2.2.',
-                style: GoogleFonts.outfit(
-                  fontSize: 13,
-                  color: AppColors.getTextMuted(isDark),
-                ),
+      isScrollControlled: true,
+      backgroundColor: AppColors.getSurface(isDark),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+                top: 12,
+                left: 20,
+                right: 20,
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: ipController,
-                style: GoogleFonts.outfit(color: AppColors.getTextPrimary(isDark)),
-                decoration: InputDecoration(
-                  labelText: 'Server IP Address',
-                  labelStyle: GoogleFonts.outfit(color: AppColors.cyan),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.getGlassBorder(isDark)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.cyan, width: 2),
-                  ),
-                  prefixIcon: const Icon(Icons.computer_rounded, color: AppColors.cyan),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.outfit(color: AppColors.getTextMuted(isDark), fontWeight: FontWeight.w600),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final newIP = ipController.text.trim();
-                if (newIP.isNotEmpty) {
-                  await AppConfig.saveIP(newIP);
-                  // Refresh user provider to force recreation of HTTP clients and re-connection
-                  ref.invalidate(userProvider);
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Server IP updated to $newIP. Reconnecting...',
-                        style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle bar
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.getTextMuted(isDark).withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                      backgroundColor: AppColors.cyan,
                     ),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.cyan,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                  const SizedBox(height: 20),
+                  // Title
+                  Text('Sound Alerts',
+                      style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.getTextPrimary(isDark))),
+                  const SizedBox(height: 4),
+                  Text('Choose which devices trigger alarm sounds',
+                      style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: AppColors.getTextMuted(isDark),
+                          fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 20),
+                  // Device list
+                  ...devices.map((deviceId) {
+                    final bool isMuted = pendingMuted.contains(deviceId);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.getBackground(isDark),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isMuted
+                                ? AppColors.getGlassBorder(isDark)
+                                : AppColors.green.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            isMuted
+                                ? Icons.volume_off_rounded
+                                : Icons.volume_up_rounded,
+                            color: isMuted
+                                ? AppColors.getTextMuted(isDark)
+                                : AppColors.green,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(deviceId,
+                                style: GoogleFonts.outfit(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.getTextPrimary(isDark))),
+                          ),
+                          _SettingAnimatedToggle(
+                            value: !isMuted,
+                            activeColor: AppColors.green,
+                            onChanged: (val) {
+                              setSheetState(() {
+                                if (val) {
+                                  pendingMuted.remove(deviceId);
+                                } else {
+                                  if (!pendingMuted.contains(deviceId)) {
+                                    pendingMuted.add(deviceId);
+                                  }
+                                }
+                              });
+                            },
+                          ),
+                        ]),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.cyan,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await ref
+                            .read(userProvider.notifier)
+                            .updateMutedDevices(pendingMuted);
+                      },
+                      child: Text('Save',
+                          style: GoogleFonts.outfit(
+                              fontSize: 15, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              child: Text(
-                'Save & Connect',
-                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -728,10 +1016,10 @@ class ProfileTab extends ConsumerWidget {
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1A2438) : const Color(0xFFF8FAFC),
+                          color: AppColors.getBackground(isDark),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                            color: AppColors.getGlassBorder(isDark),
                           ),
                         ),
                         child: Row(
@@ -858,11 +1146,11 @@ class ProfileTab extends ConsumerWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppColors.getTextPrimary(isDark)))),
-        Switch(
+        _SettingAnimatedToggle(
           value: v,
+          activeColor: c,
           onChanged: onChanged,
-          activeThumbColor: c,
-        )
+        ),
       ]),
     );
   }
@@ -921,6 +1209,84 @@ class ProfileTab extends ConsumerWidget {
                             color: AppColors.red)),
                   ]),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingAnimatedToggle extends StatelessWidget {
+  final bool value;
+  final Color activeColor;
+  final ValueChanged<bool> onChanged;
+  const _SettingAnimatedToggle({
+    required this.value,
+    required this.activeColor,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+        width: 50,
+        height: 26,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(13),
+          gradient: value
+              ? LinearGradient(
+                  colors: [activeColor, activeColor.withValues(alpha: 0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: value
+              ? null
+              : AppColors.getBackground(isDark),
+          border: Border.all(
+            color: value
+                ? Colors.transparent
+                : AppColors.getGlassBorder(isDark),
+            width: 1.0,
+          ),
+          boxShadow: value
+              ? [
+                  BoxShadow(
+                    color: activeColor.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOutCubic,
+              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

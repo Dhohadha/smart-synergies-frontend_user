@@ -32,7 +32,7 @@ class ConfirmationDialog extends StatelessWidget {
     Color iconColor = AppColors.cyan,
     bool isDestructive = false,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.6),
