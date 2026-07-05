@@ -136,138 +136,141 @@ class _AlarmScreenState extends State<AlarmScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF8B0000), // dark red
-              Colors.black,
-            ],
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFF8B0000), // dark red
+                Colors.black,
+              ],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 40.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          color: Colors.white,
-                          size: 80,
-                        ),
-                        const SizedBox(height: 30),
-                        AnimatedBuilder(
-                          animation: _pulseAnimation,
-                          builder: (context, _) => Transform.scale(
-                            scale: _pulseAnimation.value,
-                            child: Text(
-                              'CRITICAL ALERT',
-                              style: GoogleFonts.outfit(
-                                color: Colors.red.shade400,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 4,
-                              ),
-                            ),
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.white,
+                            size: 80,
                           ),
-                        ),
-                        const SizedBox(height: 40),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 30),
-                          child: Text(
-                            title,
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.outfit(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 40),
-                          child: Text(
-                            body,
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.outfit(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 18,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 60),
-                        GestureDetector(
-                          onTap: _handleStopAlarm,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _pulseAnimation,
-                                builder: (context, _) => Container(
-                                  width: 180 * _pulseAnimation.value,
-                                  height: 180 * _pulseAnimation.value,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.red.withValues(
-                                        alpha: 0.2 * (2.0 - _pulseAnimation.value)),
-                                  ),
+                          const SizedBox(height: 30),
+                          AnimatedBuilder(
+                            animation: _pulseAnimation,
+                            builder: (context, _) => Transform.scale(
+                              scale: _pulseAnimation.value,
+                              child: Text(
+                                'CRITICAL ALERT',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.red.shade400,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 4,
                                 ),
                               ),
-                              AnimatedBuilder(
-                                animation: _pulseAnimation,
-                                builder: (context, _) => Transform.scale(
-                                  scale: 1.0 + (_pulseAnimation.value - 1.0) * 0.25, // scales 1.0 to 1.05
-                                  child: Container(
-                                    width: 140,
-                                    height: 140,
+                            ),
+                          ),
+                          const SizedBox(height: 40),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 30),
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 40),
+                            child: Text(
+                              body,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.outfit(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 18,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 60),
+                          GestureDetector(
+                            onTap: _handleStopAlarm,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _pulseAnimation,
+                                  builder: (context, _) => Container(
+                                    width: 180 * _pulseAnimation.value,
+                                    height: 180 * _pulseAnimation.value,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.red.shade600,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.red.withValues(alpha: 0.5),
-                                          blurRadius: 20,
-                                          spreadRadius: 5,
-                                        ),
-                                      ],
+                                      color: Colors.red.withValues(
+                                          alpha: 0.2 * (2.0 - _pulseAnimation.value)),
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        'STOP',
-                                        style: GoogleFonts.outfit(
-                                          color: Colors.white,
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 2,
+                                  ),
+                                ),
+                                AnimatedBuilder(
+                                  animation: _pulseAnimation,
+                                  builder: (context, _) => Transform.scale(
+                                    scale: 1.0 + (_pulseAnimation.value - 1.0) * 0.25, // scales 1.0 to 1.05
+                                    child: Container(
+                                      width: 140,
+                                      height: 140,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.red.shade600,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.red.withValues(alpha: 0.5),
+                                            blurRadius: 20,
+                                            spreadRadius: 5,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'STOP',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white,
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 2,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),

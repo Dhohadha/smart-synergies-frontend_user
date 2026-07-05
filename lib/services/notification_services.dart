@@ -323,6 +323,10 @@ class NotificationServices {
           (message.notification != null &&
               !(message.notification!.title ?? '').contains('Recovered'));
 
+      final bool isRecovery = (message.data['alarm'] == '0') ||
+          (message.notification != null &&
+              (message.notification!.title ?? '').contains('Recovered'));
+
       final prefs = await SharedPreferences.getInstance();
       final bool globalSoundEnabled = prefs.getBool('alert_sound_enabled') ?? true;
       final List<String> mutedDevices = prefs.getStringList('muted_devices') ?? [];
@@ -331,6 +335,10 @@ class NotificationServices {
           (deviceID == null || !mutedDevices.contains(deviceID));
 
       if (!shouldTrigger || !alertSoundEnabled) {
+        if (isRecovery) {
+          debugPrint('[FCM-FG] Recovery received — stopping active alarm');
+          await stopAlarmNow();
+        }
         // Recovery / update / silent — show a quiet banner
         await showNormalNotification(
           title: message.notification?.title ?? message.data['title'] as String? ?? 'System Update',

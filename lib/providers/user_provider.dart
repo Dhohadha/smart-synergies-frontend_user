@@ -259,8 +259,9 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
       if (response.statusCode == 200) {
         if (state.value != null) {
           final updatedData = Map<String, dynamic>.from(state.value!);
-          updatedData['settings'] ??= {};
-          updatedData['settings']['alertSoundEnabled'] = value;
+          final Map<String, dynamic> settings = Map<String, dynamic>.from(updatedData['settings'] ?? {});
+          settings['alertSoundEnabled'] = value;
+          updatedData['settings'] = settings;
           state = AsyncValue.data(updatedData);
         }
         
@@ -291,8 +292,9 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
       if (response.statusCode == 200) {
         if (state.value != null) {
           final updatedData = Map<String, dynamic>.from(state.value!);
-          updatedData['settings'] ??= {};
-          updatedData['settings']['mutedDevices'] = deviceIds;
+          final Map<String, dynamic> settings = Map<String, dynamic>.from(updatedData['settings'] ?? {});
+          settings['mutedDevices'] = deviceIds;
+          updatedData['settings'] = settings;
           state = AsyncValue.data(updatedData);
         }
 
@@ -359,6 +361,49 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
       return false;
     } catch (e) {
       debugPrint('Error updating devices order: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateDeviceCustomName(String deviceId, String customName) async {
+    try {
+      if (firebaseUser == null) return false;
+      final token = await firebaseUser!.getIdToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/profile/devices/name'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'deviceId': deviceId,
+          'name': customName,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        final updatedUser = responseData['user'] as Map<String, dynamic>?;
+        if (updatedUser != null) {
+          state = AsyncValue.data(updatedUser);
+        } else {
+          if (state.value != null) {
+            final updatedData = Map<String, dynamic>.from(state.value!);
+            final Map<String, dynamic> customNames = Map<String, dynamic>.from(updatedData['customDeviceNames'] ?? {});
+            if (customName.trim().isEmpty) {
+              customNames.remove(deviceId);
+            } else {
+              customNames[deviceId] = customName.trim();
+            }
+            updatedData['customDeviceNames'] = customNames;
+            state = AsyncValue.data(updatedData);
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error updating device custom name: $e');
       return false;
     }
   }

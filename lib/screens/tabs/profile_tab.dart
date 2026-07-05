@@ -214,7 +214,9 @@ class ProfileTab extends ConsumerWidget {
                     (user['sharedWith'] as List<dynamic>?)?.cast<String>() ?? [];
                 final bool alertSoundEnabled = user['settings']?['alertSoundEnabled'] ?? true;
                 final List<String> mutedDevices = List<String>.from(
-                    user['settings']?['mutedDevices'] ?? []);
+                    user['settings']?['mutedDevices'] ?? [])
+                    .where((d) => assignedDevices.contains(d))
+                    .toList();
                 final userName = user['name'] ?? 'User';
                 final userEmail = user['email'] ?? '';
                 final userRole = user['isSharedUser'] == true ? 'Shared User' : 'Owner';
@@ -610,6 +612,9 @@ class ProfileTab extends ConsumerWidget {
       );
     }
     
+    final userState = ref.watch(userProvider).value;
+    final customDeviceNames = userState?['customDeviceNames'] as Map<String, dynamic>?;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -623,9 +628,12 @@ class ProfileTab extends ConsumerWidget {
           final idx = entry.key;
           final id = entry.value;
           final deviceState = ref.watch(deviceProvider(id)).value;
-          final displayName = deviceState?.name != null && deviceState!.name!.isNotEmpty
-              ? deviceState.name!
-              : 'Device $id';
+          final customName = customDeviceNames?[id];
+          final displayName = (customName != null && customName.isNotEmpty)
+              ? customName
+              : (deviceState?.name != null && deviceState!.name!.isNotEmpty
+                  ? deviceState.name!
+                  : 'Device $id');
 
           return Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -646,13 +654,27 @@ class ProfileTab extends ConsumerWidget {
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Text(
-                    displayName,
-                    style: GoogleFonts.outfit(
-                      color: AppColors.getTextPrimary(isDark),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: GoogleFonts.outfit(
+                          color: AppColors.getTextPrimary(isDark),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'ID: $id',
+                        style: GoogleFonts.outfit(
+                          color: AppColors.getTextMuted(isDark),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -747,8 +769,19 @@ class ProfileTab extends ConsumerWidget {
         // Single device: simple global toggle
         if (!multiDevice)
           _settingRow(context, Icons.volume_up_rounded, AppColors.teal,
-              'Sound Alerts', alertSoundEnabled, (val) {
-            ref.read(userProvider.notifier).updateAlertSound(val);
+              'Sound Alerts', alertSoundEnabled, (val) async {
+            final success = await ref.read(userProvider.notifier).updateAlertSound(val);
+            if (!success && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Failed to update sound alerts.',
+                    style: GoogleFonts.outfit(),
+                  ),
+                  backgroundColor: AppColors.red,
+                ),
+              );
+            }
           }, isDark)
         else
           // Multi-device: tap to open per-device bottom sheet
@@ -810,6 +843,7 @@ class ProfileTab extends ConsumerWidget {
   void _showDeviceSoundSheet(BuildContext context, WidgetRef ref,
       List<String> devices, List<String> currentMuted, bool isDark) {
     List<String> pendingMuted = List.from(currentMuted);
+    bool isSaving = false;
 
     showModalBottomSheet(
       context: context,
@@ -896,6 +930,7 @@ class ProfileTab extends ConsumerWidget {
                             value: !isMuted,
                             activeColor: AppColors.green,
                             onChanged: (val) {
+                              if (isSaving) return;
                               setSheetState(() {
                                 if (val) {
                                   pendingMuted.remove(deviceId);
@@ -924,15 +959,51 @@ class ProfileTab extends ConsumerWidget {
                         ),
                         elevation: 0,
                       ),
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        await ref
-                            .read(userProvider.notifier)
-                            .updateMutedDevices(pendingMuted);
-                      },
-                      child: Text('Save',
-                          style: GoogleFonts.outfit(
-                              fontSize: 15, fontWeight: FontWeight.w700)),
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              setSheetState(() => isSaving = true);
+                              final success = await ref
+                                  .read(userProvider.notifier)
+                                  .updateMutedDevices(pendingMuted);
+                              if (ctx.mounted) {
+                                if (success) {
+                                  Navigator.pop(ctx);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Sound alerts updated successfully!',
+                                        style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                                      ),
+                                      backgroundColor: AppColors.cyan,
+                                    ),
+                                  );
+                                } else {
+                                  setSheetState(() => isSaving = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Failed to update sound alerts.',
+                                        style: GoogleFonts.outfit(),
+                                      ),
+                                      backgroundColor: AppColors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text('Save',
+                              style: GoogleFonts.outfit(
+                                  fontSize: 15, fontWeight: FontWeight.w700)),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1005,9 +1076,14 @@ class ProfileTab extends ConsumerWidget {
                   itemBuilder: (context, index) {
                     final deviceId = localDevices[index];
                     final deviceState = ref.read(deviceProvider(deviceId)).value;
-                    final displayName = deviceState?.name != null && deviceState!.name!.isNotEmpty
-                        ? deviceState.name!
-                        : 'Device $deviceId';
+                    final userState = ref.read(userProvider).value;
+                    final customDeviceNames = userState?['customDeviceNames'] as Map<String, dynamic>?;
+                    final customName = customDeviceNames?[deviceId];
+                    final displayName = (customName != null && customName.isNotEmpty)
+                        ? customName
+                        : (deviceState?.name != null && deviceState!.name!.isNotEmpty
+                            ? deviceState.name!
+                            : 'Device $deviceId');
 
                     return Material(
                       key: ValueKey(deviceId),
@@ -1042,14 +1118,15 @@ class ProfileTab extends ConsumerWidget {
                                       fontSize: 14,
                                     ),
                                   ),
-                                  if (deviceState?.name != null && deviceState!.name!.isNotEmpty)
-                                    Text(
-                                      'ID: $deviceId',
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 11,
-                                        color: AppColors.getTextMuted(isDark),
-                                      ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'ID: $deviceId',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 11,
+                                      color: AppColors.getTextMuted(isDark),
+                                      fontWeight: FontWeight.w500,
                                     ),
+                                  ),
                                 ],
                               ),
                             ),

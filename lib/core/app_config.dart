@@ -10,13 +10,30 @@ class AppConfig {
   static String get serverIP => _serverIP;
 
   /// Get user API endpoints
-  static String get userBaseUrl => 'http://$_serverIP:6565/api/users';
+  static String get userBaseUrl {
+    if (_serverIP.startsWith('http://') || _serverIP.startsWith('https://')) {
+      return '$_serverIP/api/users';
+    }
+    return 'http://$_serverIP:6565/api/users';
+  }
 
   /// Get device API endpoints
-  static String get deviceBaseUrl => 'http://$_serverIP:6565/api/devices';
+  static String get deviceBaseUrl {
+    if (_serverIP.startsWith('http://') || _serverIP.startsWith('https://')) {
+      return '$_serverIP/api/devices';
+    }
+    return 'http://$_serverIP:6565/api/devices';
+  }
 
   /// Get WebSocket endpoint
-  static String get wsUrl => 'ws://$_serverIP:6565';
+  static String get wsUrl {
+    if (_serverIP.startsWith('https://')) {
+      return _serverIP.replaceFirst('https://', 'wss://');
+    } else if (_serverIP.startsWith('http://')) {
+      return _serverIP.replaceFirst('http://', 'ws://');
+    }
+    return 'ws://$_serverIP:6565';
+  }
 
   /// Initialize and load server IP from SharedPreferences
   static Future<void> init() async {

@@ -158,6 +158,8 @@ class _AlertsHistoryScreenState extends ConsumerState<AlertsHistoryScreen> {
     }
 
     // Merge and attach device label context
+    final customDeviceNames = userState.value?['customDeviceNames'] as Map<String, dynamic>?;
+
     final List<Map<String, dynamic>> allHistory = [];
     for (int i = 0; i < devices.length; i++) {
       final deviceId = devices[i];
@@ -165,9 +167,12 @@ class _AlertsHistoryScreenState extends ConsumerState<AlertsHistoryScreen> {
       
       // Resolve device friendly name
       final deviceState = ref.watch(deviceProvider(deviceId)).value;
-      final displayName = deviceState?.name != null && deviceState!.name!.isNotEmpty
-          ? deviceState.name!
-          : 'Device $deviceId';
+      final customName = customDeviceNames?[deviceId];
+      final displayName = (customName != null && customName.isNotEmpty)
+          ? customName
+          : (deviceState?.name != null && deviceState!.name!.isNotEmpty
+              ? deviceState.name!
+              : 'Device $deviceId');
 
       for (var item in deviceHistory) {
         final historyId = item['_id'] ?? '';
@@ -364,7 +369,7 @@ class _AlertsHistoryScreenState extends ConsumerState<AlertsHistoryScreen> {
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 4.0),
                     child: Text(
-                      '${DateFormat('dd MMM, hh:mm a').format(date)} • $deviceLabel',
+                      '${DateFormat('dd MMM, hh:mm a').format(date)} • $deviceLabel ($deviceId)',
                       style: GoogleFonts.outfit(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,

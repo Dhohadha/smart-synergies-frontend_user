@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -15,6 +16,17 @@ import android.widget.ImageView
 import android.widget.TextView
 
 class LockScreenAlarmActivity : Activity() {
+
+    private lateinit var prefs: SharedPreferences
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
+        if (key == "flutter.alarm_playing") {
+            val isPlaying = sharedPreferences.getBoolean(key, false)
+            if (!isPlaying) {
+                android.util.Log.d("LockScreenAlarmActivity", "Alarm stopped externally — finishing activity")
+                finish()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,6 +42,15 @@ class LockScreenAlarmActivity : Activity() {
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         )
+
+        // Block system back/swipe-back gesture on Android 13+ (API 33+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
+            ) {
+                // Do nothing to restrict back navigation
+            }
+        }
 
         // WakeLock to force screen on
         try {
@@ -49,7 +70,8 @@ class LockScreenAlarmActivity : Activity() {
         setContentView(R.layout.activity_lock_screen_alarm)
 
         // Read FCM message from SharedPreferences
-        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(listener)
         // Flutter shared_preferences adds a "flutter." prefix
         val title = prefs.getString("flutter.latest_alarm_title", "⚠️ Aerator Alert!")
         val body = prefs.getString("flutter.latest_alarm_body", "Tap to stop alarm.")
@@ -130,5 +152,12 @@ class LockScreenAlarmActivity : Activity() {
     @Suppress("MissingSuperCall")
     override fun onBackPressed() {
         // Do nothing! They must press the STOP button.
+    }
+
+    override fun onDestroy() {
+        if (::prefs.isInitialized) {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+        super.onDestroy()
     }
 }

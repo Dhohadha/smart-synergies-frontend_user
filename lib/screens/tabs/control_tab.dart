@@ -8,6 +8,7 @@ import '../../providers/device_provider.dart';
 import '../../models/device_model.dart';
 import '../../widgets/error_screen.dart';
 import '../../providers/server_status_provider.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 class ControlTab extends ConsumerWidget {
   const ControlTab({super.key});
@@ -126,15 +127,15 @@ class ControlTab extends ConsumerWidget {
                         color: AppColors.cyan,
                         onRefresh: () async {
                           try {
-                            // 1. Refresh User Profile
-                            await ref.read(userProvider.notifier).fetchUserProfile();
+                            // 1. Refresh User Profile quietly
+                            await ref.read(userProvider.notifier).refreshProfileQuietly();
                             
                             // 2. Fetch fresh device status for each assigned device
                             final updatedUser = ref.read(userProvider).value;
                             if (updatedUser != null) {
                               final devices = (updatedUser['assignedDevices'] as List<dynamic>?)?.cast<String>() ?? [];
                               await Future.wait(devices.map((deviceId) async {
-                                await ref.read(deviceProvider(deviceId).notifier).fetchDeviceData();
+                                await ref.read(deviceProvider(deviceId).notifier).fetchDeviceData(showLoading: false);
                               }));
                             }
                           } catch (e) {
@@ -216,14 +217,22 @@ class _DeviceControlCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final deviceState = ref.watch(deviceProvider(deviceId));
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final userState = ref.watch(userProvider).value;
+    final customDeviceNames = userState?['customDeviceNames'] as Map<String, dynamic>?;
+    final customName = customDeviceNames?[deviceId];
 
     return deviceState.when(
       data: (device) {
         final isAnyRelayOn = device.relays.any((r) => r.status);
+        final displayName = (customName != null && customName.isNotEmpty)
+            ? customName
+            : (device.name != null && device.name!.isNotEmpty
+                ? device.name!
+                : 'Device $deviceId');
         final cardContent = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDeviceHeader(device, isDark),
+            _buildDeviceHeader(device, displayName, isDark),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Column(
@@ -234,10 +243,24 @@ class _DeviceControlCard extends ConsumerWidget {
                       relayName: 'Relay 1',
                       isOn: device.relays[0].status,
                       isDark: isDark,
-                      onToggle: () {
-                        ref.read(deviceProvider(deviceId).notifier).toggleRelay(
-                          r1: !device.relays[0].status,
+                      onToggle: () async {
+                        final bool targetState = !device.relays[0].status;
+                        final bool? confirm = await ConfirmationDialog.show(
+                          context: context,
+                          title: targetState ? 'Start Relay 1?' : 'Stop Relay 1?',
+                          message: targetState 
+                              ? 'Are you sure you want to start this aerator?'
+                              : 'Warning: Stopping the aerator may reduce oxygen levels. Are you sure?',
+                          confirmLabel: targetState ? 'Start' : 'Stop',
+                          isDestructive: !targetState,
+                          icon: Icons.power_settings_new_rounded,
+                          iconColor: targetState ? AppColors.green : AppColors.red,
                         );
+                        if (confirm == true) {
+                          ref.read(deviceProvider(deviceId).notifier).toggleRelay(
+                            r1: targetState,
+                          );
+                        }
                       },
                     ),
                   if (device.relays.length > 1)
@@ -246,10 +269,24 @@ class _DeviceControlCard extends ConsumerWidget {
                       relayName: 'Relay 2',
                       isOn: device.relays[1].status,
                       isDark: isDark,
-                      onToggle: () {
-                        ref.read(deviceProvider(deviceId).notifier).toggleRelay(
-                          r2: !device.relays[1].status,
+                      onToggle: () async {
+                        final bool targetState = !device.relays[1].status;
+                        final bool? confirm = await ConfirmationDialog.show(
+                          context: context,
+                          title: targetState ? 'Start Relay 2?' : 'Stop Relay 2?',
+                          message: targetState 
+                              ? 'Are you sure you want to start this aerator?'
+                              : 'Warning: Stopping the aerator may reduce oxygen levels. Are you sure?',
+                          confirmLabel: targetState ? 'Start' : 'Stop',
+                          isDestructive: !targetState,
+                          icon: Icons.power_settings_new_rounded,
+                          iconColor: targetState ? AppColors.green : AppColors.red,
                         );
+                        if (confirm == true) {
+                          ref.read(deviceProvider(deviceId).notifier).toggleRelay(
+                            r2: targetState,
+                          );
+                        }
                       },
                     ),
                 ],
@@ -321,7 +358,7 @@ class _DeviceControlCard extends ConsumerWidget {
     );
   }
 
-  Widget _buildDeviceHeader(DeviceModel device, bool isDark) {
+  Widget _buildDeviceHeader(DeviceModel device, String displayName, bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
       child: Row(
@@ -342,13 +379,18 @@ class _DeviceControlCard extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  device.name != null && device.name!.isNotEmpty
-                      ? device.name!
-                      : 'Device ${device.deviceId}',
+                  displayName,
                   style: GoogleFonts.outfit(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: AppColors.getTextPrimary(isDark))),
+                const SizedBox(height: 2),
+                Text(
+                  'ID: ${device.deviceId}',
+                  style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.getTextMuted(isDark))),
                 Row(
                   children: [
                     Container(

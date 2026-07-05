@@ -4,16 +4,25 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/device_model.dart';
 import '../core/app_config.dart';
 
+// Unified WebSocket Service Provider
+final websocketProvider = Provider<WebSocketService>((ref) {
+  final wsService = WebSocketService(ref);
+  ref.onDispose(() => wsService.dispose());
+  return wsService;
+});
+
+// Device Family Provider updated to pass Ref
 final deviceProvider =
     StateNotifierProvider.family<
       DeviceNotifier,
       AsyncValue<DeviceModel>,
       String
     >((ref, deviceId) {
-      return DeviceNotifier(deviceId);
+      return DeviceNotifier(deviceId, ref);
     });
 
 final historyProvider = FutureProvider.family<List<dynamic>, String>((
@@ -21,7 +30,13 @@ final historyProvider = FutureProvider.family<List<dynamic>, String>((
   deviceId,
 ) async {
   final baseUrl = AppConfig.deviceBaseUrl;
-  final response = await http.get(Uri.parse('$baseUrl/$deviceId/history'));
+  final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+  final response = await http.get(
+    Uri.parse('$baseUrl/$deviceId/history'),
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
   if (response.statusCode == 200) {
     return json.decode(response.body) as List<dynamic>;
   } else {
@@ -32,7 +47,13 @@ final historyProvider = FutureProvider.family<List<dynamic>, String>((
 Future<bool> deleteDeviceHistoryItem(String deviceId, String historyId) async {
   try {
     final baseUrl = AppConfig.deviceBaseUrl;
-    final response = await http.delete(Uri.parse('$baseUrl/$deviceId/history/$historyId'));
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/$deviceId/history/$historyId'),
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
     return response.statusCode == 200;
   } catch (e) {
     debugPrint('Error deleting history item: $e');
@@ -40,27 +61,34 @@ Future<bool> deleteDeviceHistoryItem(String deviceId, String historyId) async {
   }
 }
 
-class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
-  DeviceNotifier(this.deviceId) : super(const AsyncValue.loading()) {
-    fetchDeviceData();
-    _initWebSocket();
+// Global, shared WebSocket Service class
+class WebSocketService {
+  WebSocketService(this.ref) {
+    _connect();
   }
 
-  final String deviceId;
-  final String baseUrl = AppConfig.deviceBaseUrl;
-
+  final Ref ref;
   WebSocket? _webSocket;
-  Timer? _reconnectTimer;
+  final Set<String> _subscriptions = {};
   bool _isDisposed = false;
+  Timer? _reconnectTimer;
 
-  void _initWebSocket() async {
+  void subscribe(String deviceId) {
+    _subscriptions.add(deviceId);
+    _sendSubscription(deviceId);
+  }
+
+  void unsubscribe(String deviceId) {
+    _subscriptions.remove(deviceId);
+  }
+
+  void _connect() async {
     if (_isDisposed) return;
-
     _closeWebSocket();
 
     try {
       final wsUrl = AppConfig.wsUrl;
-      debugPrint('[DEBUG] ðŸ”Œ Connecting to WebSocket at $wsUrl for device $deviceId...');
+      debugPrint('[WS] Connecting to unified WebSocket at $wsUrl...');
       _webSocket = await WebSocket.connect(wsUrl).timeout(const Duration(seconds: 5));
       
       if (_isDisposed) {
@@ -68,43 +96,64 @@ class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
         return;
       }
 
-      debugPrint('[DEBUG] âœ… WebSocket connected successfully for device $deviceId');
-      
+      debugPrint('[WS] Unified WebSocket connected successfully');
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
+
+      // Resubscribe all active deviceIDs
+      for (final deviceId in _subscriptions) {
+        _sendSubscription(deviceId);
+      }
 
       _webSocket!.listen(
         (message) {
           if (_isDisposed) return;
           try {
             final parsed = json.decode(message) as Map<String, dynamic>;
-            debugPrint('[DEBUG] ðŸ“© Received WebSocket message: $parsed');
-            
-            if (parsed['type'] == 'device_update' && parsed['deviceID'] == deviceId) {
+            debugPrint('[WS] 📥 Received message: $parsed');
+            if (parsed['type'] == 'device_update') {
+              final deviceId = parsed['deviceID'] as String?;
               final deviceData = parsed['data'];
-              if (deviceData != null) {
+              if (deviceId != null && deviceData != null) {
                 final updatedDevice = DeviceModel.fromJson(deviceData);
-                state = AsyncValue.data(updatedDevice);
-                debugPrint('[DEBUG] âš¡ Successfully updated state for $deviceId from live WebSocket!');
+                ref.read(deviceProvider(deviceId).notifier).updateStateFromWebSocket(updatedDevice);
               }
             }
           } catch (e) {
-            debugPrint('[DEBUG] âš ï¸ Error parsing WebSocket message: $e');
+            debugPrint('[WS] ⚠️ Error parsing message: $e');
           }
         },
         onError: (err) {
-          debugPrint('[DEBUG] âŒ WebSocket stream error for device $deviceId: $err');
+          debugPrint('[WS] ❌ WebSocket stream error: $err');
           _scheduleReconnect();
         },
         onDone: () {
-          debugPrint('[DEBUG] âŒ WebSocket connection closed for device $deviceId');
+          debugPrint('[WS] ❌ WebSocket connection closed');
           _scheduleReconnect();
         },
         cancelOnError: true,
       );
     } catch (e) {
-      debugPrint('[DEBUG] âŒ WebSocket connection failed for device $deviceId: $e');
+      debugPrint('[WS] ❌ WebSocket connection failed: $e');
       _scheduleReconnect();
+    }
+  }
+
+  void _sendSubscription(String deviceId) async {
+    if (_webSocket == null || _webSocket!.readyState != WebSocket.open) return;
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (_isDisposed) return;
+      if (token != null) {
+        _webSocket!.add(json.encode({
+          'type': 'subscribe',
+          'token': token,
+          'deviceID': deviceId,
+        }));
+        debugPrint('[WS] Sent subscription request for $deviceId');
+      }
+    } catch (e) {
+      debugPrint('[WS] Error sending subscription: $e');
     }
   }
 
@@ -112,10 +161,8 @@ class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
     if (_isDisposed) return;
     if (_reconnectTimer != null && _reconnectTimer!.isActive) return;
 
-    debugPrint('[DEBUG] â³ Scheduling WebSocket reconnect in 5 seconds for device $deviceId...');
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
-      _initWebSocket();
-    });
+    debugPrint('[WS] ⏳ Scheduling WebSocket reconnect in 5 seconds...');
+    _reconnectTimer = Timer(const Duration(seconds: 5), _connect);
   }
 
   void _closeWebSocket() {
@@ -123,26 +170,45 @@ class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
       _webSocket?.close();
       _webSocket = null;
     } catch (e) {
-      debugPrint('[DEBUG] Error closing WebSocket: $e');
+      debugPrint('[WS] Error closing WebSocket: $e');
     }
   }
 
-  @override
   void dispose() {
     _isDisposed = true;
     _reconnectTimer?.cancel();
     _closeWebSocket();
-    super.dispose();
+  }
+}
+
+class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
+  DeviceNotifier(this.deviceId, this.ref) : super(const AsyncValue.loading()) {
+    fetchDeviceData();
+    // Register subscription with the unified WebSocket service
+    ref.read(websocketProvider).subscribe(deviceId);
   }
 
+  final String deviceId;
+  final Ref ref;
+  final String baseUrl = AppConfig.deviceBaseUrl;
 
+  void updateStateFromWebSocket(DeviceModel updatedDevice) {
+    state = AsyncValue.data(updatedDevice);
+    debugPrint('[DEBUG] ⚡ DeviceNotifier state updated from unified WebSocket for $deviceId');
+  }
 
   Future<void> fetchDeviceData({bool showLoading = true}) async {
     if (showLoading) {
       state = const AsyncValue.loading();
     }
     try {
-      final response = await http.get(Uri.parse('$baseUrl/status/$deviceId'));
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/status/$deviceId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
       if (response.statusCode == 200) {
         state = AsyncValue.data(
           DeviceModel.fromJson(json.decode(response.body)),
@@ -167,9 +233,13 @@ class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
     required int totalAerators,
   }) async {
     try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       final response = await http.post(
         Uri.parse('$baseUrl/$deviceId/calibrate'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
         body: json.encode({
           'runningAerators': runningAerators,
           'totalAerators': totalAerators,
@@ -208,9 +278,13 @@ class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
     });
 
     try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       final response = await http.post(
         Uri.parse('$baseUrl/$deviceId/toggle-relay'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
         body: json.encode({
           'relay1toggle': r1,
           'relay2toggle': r2,
@@ -234,9 +308,13 @@ class DeviceNotifier extends StateNotifier<AsyncValue<DeviceModel>> {
 
   Future<bool> updateDeviceName(String newName) async {
     try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       final response = await http.post(
         Uri.parse('$baseUrl/config/$deviceId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
         body: json.encode({'name': newName}),
       );
       if (response.statusCode == 200) {

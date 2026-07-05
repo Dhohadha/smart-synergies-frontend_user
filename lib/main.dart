@@ -51,6 +51,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       (message.notification != null &&
           !(message.notification!.title ?? '').contains('Recovered'));
 
+  final bool isRecovery = (message.data['alarm'] == '0') ||
+      (message.notification != null &&
+          (message.notification!.title ?? '').contains('Recovered'));
+
   final bool alertSoundEnabled = prefs.getBool('alert_sound_enabled') ?? true;
   final List<String> mutedDevices = prefs.getStringList('muted_devices') ?? [];
   final String? deviceID = message.data['deviceID'];
@@ -75,6 +79,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       // notification AND loops the audio perfectly.
       debugPrint('[FCM-BG] Native AlarmSoundService will handle audio and notification.');
     } else {
+      if (isRecovery) {
+        debugPrint('[FCM-BG] Recovery received — stopping active alarm');
+        await NotificationServices().stopAlarmNow();
+      }
       await showNormalNotification(title: title, body: body);
     }
   } catch (e) {

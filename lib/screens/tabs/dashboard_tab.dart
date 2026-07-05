@@ -211,9 +211,9 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
       color: AppColors.cyan,
       onRefresh: () async {
         try {
-          // Refresh user profile and all assigned device data on swipe down
-          await ref.read(userProvider.notifier).fetchUserProfile();
-          await ref.read(deviceProvider(deviceId).notifier).fetchDeviceData();
+          // Refresh user profile quietly and device data on swipe down
+          await ref.read(userProvider.notifier).refreshProfileQuietly();
+          await ref.read(deviceProvider(deviceId).notifier).fetchDeviceData(showLoading: false);
           ref.invalidate(historyProvider(deviceId));
         } catch (e) {
           debugPrint('Error refreshing device $deviceId: $e');
@@ -231,9 +231,9 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
     );
   }
 
-  void _showEditDeviceNameDialog(BuildContext context, DeviceModel device) {
+  void _showEditDeviceNameDialog(BuildContext context, DeviceModel device, String? currentCustomName) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final controller = TextEditingController(text: device.name ?? '');
+    final controller = TextEditingController(text: currentCustomName ?? device.name ?? '');
     bool isSaving = false;
 
     showDialog(
@@ -244,7 +244,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
             return AlertDialog(
               backgroundColor: AppColors.getSurface(isDark),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 side: BorderSide(
                   color: AppColors.getGlassBorder(isDark),
                   width: 1.0,
@@ -317,8 +317,8 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                           final newName = controller.text.trim();
                           setDialogState(() => isSaving = true);
                           final success = await ref
-                              .read(deviceProvider(device.deviceId).notifier)
-                              .updateDeviceName(newName);
+                              .read(userProvider.notifier)
+                              .updateDeviceCustomName(device.deviceId, newName);
                           if (context.mounted) {
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -476,10 +476,18 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
   Widget _buildDeviceCard(BuildContext context, String deviceId, bool isDark) {
     final deviceState = ref.watch(deviceProvider(deviceId));
     final historyState = ref.watch(historyProvider(deviceId));
+    final userState = ref.watch(userProvider).value;
+    final customDeviceNames = userState?['customDeviceNames'] as Map<String, dynamic>?;
+    final customName = customDeviceNames?[deviceId];
 
     return deviceState.when(
       data: (device) {
         final totalCurrent = device.line3;
+        final displayName = (customName != null && customName.isNotEmpty)
+            ? customName
+            : (device.name != null && device.name!.isNotEmpty
+                ? device.name!
+                : 'Device $deviceId');
 
         return Container(
           padding: const EdgeInsets.all(24),
@@ -512,9 +520,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                           children: [
                             Flexible(
                               child: Text(
-                                device.name != null && device.name!.isNotEmpty
-                                    ? device.name!
-                                    : 'Device $deviceId',
+                                displayName,
                                 style: GoogleFonts.outfit(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
@@ -525,7 +531,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                             ),
                             const SizedBox(width: 8),
                             GestureDetector(
-                              onTap: () => _showEditDeviceNameDialog(context, device),
+                              onTap: () => _showEditDeviceNameDialog(context, device, customName),
                               child: const Icon(
                                 Icons.edit_rounded,
                                 color: AppColors.cyan,
@@ -533,6 +539,15 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'ID: $deviceId',
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.getTextMuted(isDark),
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
