@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/device_model.dart';
 import '../core/app_config.dart';
+import 'user_provider.dart';
 
 // Unified WebSocket Service Provider
 final websocketProvider = Provider<WebSocketService>((ref) {
@@ -72,6 +73,7 @@ class WebSocketService {
   final Set<String> _subscriptions = {};
   bool _isDisposed = false;
   Timer? _reconnectTimer;
+  int _consecutiveFailures = 0;
 
   void subscribe(String deviceId) {
     _subscriptions.add(deviceId);
@@ -97,6 +99,15 @@ class WebSocketService {
       }
 
       debugPrint('[WS] Unified WebSocket connected successfully');
+      _consecutiveFailures = 0;
+
+      // If userProvider is currently in error state, refresh profile to restore dashboard
+      final userState = ref.read(userProvider);
+      if (userState.hasError) {
+        debugPrint('[WS] Connection restored — auto-refreshing user profile to return to dashboard');
+        ref.read(userProvider.notifier).fetchUserProfile();
+      }
+
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
 
@@ -135,6 +146,11 @@ class WebSocketService {
       );
     } catch (e) {
       debugPrint('[WS] ❌ WebSocket connection failed: $e');
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= 3) {
+        debugPrint('[WS] 3 consecutive connection failures reached — triggering error screen');
+        ref.read(userProvider.notifier).setConnectionError(e);
+      }
       _scheduleReconnect();
     }
   }

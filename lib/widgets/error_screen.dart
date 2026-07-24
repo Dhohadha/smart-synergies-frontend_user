@@ -18,8 +18,6 @@ class ErrorScreen extends StatefulWidget {
 }
 
 class _ErrorScreenState extends State<ErrorScreen> {
-  bool _showDetails = false;
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -215,67 +213,7 @@ class _ErrorScreenState extends State<ErrorScreen> {
                   .fadeIn(duration: 500.ms, delay: 200.ms)
                   .scale(begin: const Offset(0.9, 0.9), end: const Offset(1.0, 1.0), duration: 500.ms, curve: Curves.easeOutBack),
                   
-                  const Spacer(flex: 3),
-                  
-                  // Collapsible details toggle
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _showDetails = !_showDetails;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(10),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _showDetails ? 'Hide Error Details' : 'Show Error Details',
-                            style: GoogleFonts.outfit(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.getTextMuted(isDark),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            _showDetails ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                            color: AppColors.getTextMuted(isDark),
-                            size: 16,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  
-                  if (_showDetails) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      constraints: const BoxConstraints(maxHeight: 120),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF131C2E) : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.getGlassBorder(isDark),
-                          width: 1.0,
-                        ),
-                      ),
-                      child: SingleChildScrollView(
-                        child: Text(
-                          errorMessage,
-                          style: GoogleFonts.firaCode(
-                            fontSize: 10.5,
-                            height: 1.45,
-                            color: isDark ? Colors.red.shade300 : Colors.red.shade700,
-                          ),
-                        ),
-                      ),
-                    ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.1, end: 0, duration: 250.ms),
-                  ],
-                  const Spacer(flex: 1),
+                  const Spacer(flex: 4),
                 ],
               ),
             ),

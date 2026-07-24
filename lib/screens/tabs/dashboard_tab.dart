@@ -1107,7 +1107,7 @@ class _DashboardTabState extends ConsumerState<DashboardTab> {
     final notWorking = device.totalAerators - device.workingAerators;
     if (notWorking == 0) {
       return AppColors.green;
-    } else if (notWorking > 2) {
+    } else if (notWorking >= 1) {
       return AppColors.red;
     } else {
       return AppColors.yellow;

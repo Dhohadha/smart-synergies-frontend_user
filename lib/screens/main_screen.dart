@@ -7,8 +7,8 @@ import 'tabs/dashboard_tab.dart';
 import 'tabs/control_tab.dart';
 import 'tabs/profile_tab.dart';
 import '../widgets/confirmation_dialog.dart';
-
 import '../../providers/user_provider.dart';
+import '../../providers/device_provider.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
@@ -355,6 +355,9 @@ class _MainScreenState extends ConsumerState<MainScreen> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Eagerly initialize WebSocket service to monitor connectivity and auto-reconnect
+    ref.read(websocketProvider);
 
     // Listen for invitations and name setup
     ref.listen<AsyncValue<Map<String, dynamic>?>>(userProvider, (previous, next) {

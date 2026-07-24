@@ -35,7 +35,7 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
         headers: {
           'Authorization': 'Bearer $token',
         },
-      );
+      ).timeout(const Duration(seconds: 10));
       
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
@@ -215,7 +215,7 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
         headers: {
           'Authorization': 'Bearer $token',
         },
-      );
+      ).timeout(const Duration(seconds: 10));
       
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
@@ -237,9 +237,15 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
         await prefs.setStringList('muted_devices', mutedDevices);
 
         state = AsyncValue.data(data);
+      } else {
+        state = AsyncValue.error(
+          'Server error (${response.statusCode}): ${response.body}',
+          StackTrace.current,
+        );
       }
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('Error in refreshProfileQuietly: $e');
+      state = AsyncValue.error(e, st);
     }
   }
 
@@ -406,6 +412,10 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
       debugPrint('Error updating device custom name: $e');
       return false;
     }
+  }
+
+  void setConnectionError(Object error) {
+    state = AsyncValue.error(error, StackTrace.current);
   }
 }
 
