@@ -213,6 +213,7 @@ class ProfileTab extends ConsumerWidget {
                 final sharedWith =
                     (user['sharedWith'] as List<dynamic>?)?.cast<String>() ?? [];
                 final bool alertSoundEnabled = user['settings']?['alertSoundEnabled'] ?? true;
+                final int aeratorFaultThreshold = user['settings']?['aeratorFaultThreshold'] ?? 2;
                 final List<String> mutedDevices = List<String>.from(
                     user['settings']?['mutedDevices'] ?? [])
                     .where((d) => assignedDevices.contains(d))
@@ -285,7 +286,7 @@ class ProfileTab extends ConsumerWidget {
                     _sectionLabel(Icons.settings_rounded, 'Settings', isDark)
                         .animate()
                         .fadeIn(duration: 500.ms, delay: 450.ms),
-                    _settingsSection(context, ref, alertSoundEnabled, assignedDevices, mutedDevices, isDark)
+                    _settingsSection(context, ref, alertSoundEnabled, aeratorFaultThreshold, assignedDevices, mutedDevices, isDark)
                         .animate()
                         .fadeIn(duration: 500.ms, delay: 500.ms),
                     const SizedBox(height: 12),
@@ -745,7 +746,7 @@ class ProfileTab extends ConsumerWidget {
   }
 
   Widget _settingsSection(BuildContext context, WidgetRef ref, bool alertSoundEnabled,
-      List<String> assignedDevices, List<String> mutedDevices, bool isDark) {
+      int aeratorFaultThreshold, List<String> assignedDevices, List<String> mutedDevices, bool isDark) {
     final themeMode = ref.watch(themeProvider);
     final isDarkModeEnabled = themeMode == ThemeMode.dark;
     final bool multiDevice = assignedDevices.length > 1;
@@ -787,6 +788,12 @@ class ProfileTab extends ConsumerWidget {
           // Multi-device: tap to open per-device bottom sheet
           _soundAlertMultiRow(
               context, ref, assignedDevices, mutedDevices, allUnmuted, isDark),
+        Divider(
+            height: 1,
+            color: AppColors.getGlassBorder(isDark).withValues(alpha: 0.1),
+            indent: 16,
+            endIndent: 16),
+        _faultThresholdRow(context, ref, aeratorFaultThreshold, isDark),
         const _PermissionStatusSection(),
       ]),
     );
@@ -1288,6 +1295,177 @@ class ProfileTab extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _faultThresholdRow(BuildContext context, WidgetRef ref, int currentThreshold, bool isDark) {
+    return InkWell(
+      onTap: () => _showFaultThresholdDialog(context, ref, currentThreshold, isDark),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(children: [
+          Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: AppColors.orange.withValues(alpha: 0.12)),
+              child: const Icon(Icons.warning_amber_rounded, color: AppColors.orange, size: 18)),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Aerator Alert Threshold',
+                    style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.getTextPrimary(isDark))),
+                Text(
+                  'Alert when $currentThreshold or more aerators stop working',
+                  style: GoogleFonts.outfit(
+                      fontSize: 11, color: AppColors.getTextMuted(isDark)),
+                ),
+              ])),
+          Icon(Icons.arrow_forward_ios_rounded,
+              size: 14,
+              color: AppColors.getTextMuted(isDark).withValues(alpha: 0.5)),
+        ]),
+      ),
+    );
+  }
+
+  void _showFaultThresholdDialog(BuildContext context, WidgetRef ref, int currentThreshold, bool isDark) {
+    int selectedValue = currentThreshold;
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.getSurface(isDark),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              title: Text(
+                'Alert Threshold',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.getTextPrimary(isDark),
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Trigger alerts after how many aerators stop working:',
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      color: AppColors.getTextMuted(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.getGlassBorder(isDark)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: selectedValue,
+                          dropdownColor: AppColors.getSurface(isDark),
+                          style: GoogleFonts.outfit(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.getTextPrimary(isDark),
+                          ),
+                          items: List.generate(10, (index) => index + 1).map((val) {
+                            return DropdownMenuItem<int>(
+                              value: val,
+                              child: Text('$val Aerator${val > 1 ? 's' : ''}'),
+                            );
+                          }).toList(),
+                          onChanged: isSaving
+                              ? null
+                              : (val) {
+                                  if (val != null) {
+                                    setDialogState(() => selectedValue = val);
+                                  }
+                                },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.outfit(
+                      color: AppColors.getTextMuted(isDark),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() => isSaving = true);
+                          final success = await ref
+                              .read(userProvider.notifier)
+                              .updateAeratorFaultThreshold(selectedValue);
+                          setDialogState(() => isSaving = false);
+                          if (success && context.mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Alert threshold updated successfully!',
+                                  style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                                ),
+                                backgroundColor: AppColors.cyan,
+                              ),
+                            );
+                          } else if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to update threshold.',
+                                  style: GoogleFonts.outfit(),
+                                ),
+                                backgroundColor: AppColors.red,
+                              ),
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.cyan,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(
+                          'Save',
+                          style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

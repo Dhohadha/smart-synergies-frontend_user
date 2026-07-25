@@ -316,6 +316,40 @@ class UserNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>?>> {
     }
   }
 
+  Future<bool> updateAeratorFaultThreshold(int value) async {
+    try {
+      if (firebaseUser == null) return false;
+      final token = await firebaseUser!.getIdToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/settings/fault-threshold'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'aeratorFaultThreshold': value}),
+      );
+
+      if (response.statusCode == 200) {
+        if (state.value != null) {
+          final updatedData = Map<String, dynamic>.from(state.value!);
+          final Map<String, dynamic> settings = Map<String, dynamic>.from(updatedData['settings'] ?? {});
+          settings['aeratorFaultThreshold'] = value;
+          updatedData['settings'] = settings;
+          state = AsyncValue.data(updatedData);
+        }
+        
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('aerator_fault_threshold', value);
+        
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error updating aerator fault threshold: $e');
+      return false;
+    }
+  }
+
   Future<bool> updateProfileName(String newName) async {
     try {
       if (firebaseUser == null) return false;
